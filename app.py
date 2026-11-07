@@ -19,8 +19,21 @@ from openai import OpenAI
 # 设置页面配置：宽屏模式，侧边栏默认展开
 st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
 
-# 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
-client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"])
+# ============ 大模型客户端初始化（带缓存，避免每次交互重建连接） ============
+@st.cache_resource
+def get_client():
+    """读取本地密钥并建立大模型连接，仅首次运行时执行，后续自动缓存"""
+    return OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"])
+
+# 首次加载时显示友好的苏醒动画，后续交互不再重复显示
+if "_awake" not in st.session_state:
+    with st.spinner('树洞猫咪正在苏醒中，请稍候喵~ 🐾'):
+        # 耗时的初始化操作：读取密钥、建立 API 连接
+        client = get_client()
+        st.session_state["_awake"] = True
+    st.toast("🐱 树洞猫咪已苏醒，随时可以倾诉喵~")
+else:
+    client = get_client()
 
 # 高危关键词：命中直接拦截，无需确认
 HIGH_RISK_KEYWORDS = [
