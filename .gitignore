@@ -1,0 +1,9 @@
+# 保护本地密钥，禁止提交
+.streamlit/secrets.toml
+
+# 对话历史（隐私数据，禁止提交）
+chat_history.json
+
+# Python
+__pycache__/
+*.pyc
