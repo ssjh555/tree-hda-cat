@@ -202,19 +202,6 @@ def llm_confirm_crisis(text):
     except Exception:
         return True  # 安全兜底：判断失败时按危机处理
 
-# ==================== 访问密码验证（保护隐私，未登录不渲染任何内容） ====================
-if "password_correct" not in st.session_state:
-    st.session_state.password_correct = False
-
-if not st.session_state.password_correct:
-    # 密码页隐藏侧边栏与聊天输入框
-    st.markdown("""
-    <style>
-    section[data-testid="stSidebar"] {display: none !important;}
-    [data-testid="stChatInput"] {display: none !important;}
-    </style>
-    """, unsafe_allow_html=True)
-
 # ==================== 自定义 CSS：治愈系树洞风格 ====================
 st.markdown("""
 <style>
@@ -310,11 +297,10 @@ if "entered" not in st.session_state:
     st.session_state.entered = False
 
 if not st.session_state.entered:
-    # 封面页隐藏侧边栏与聊天输入框
+    # 封面页隐藏侧边栏（聊天输入框无需隐藏：st.stop() 已阻止其渲染）
     st.markdown("""
     <style>
     section[data-testid="stSidebar"] {display: none !important;}
-    [data-testid="stChatInput"] {display: none !important;}
     </style>
     """, unsafe_allow_html=True)
 
