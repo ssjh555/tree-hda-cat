@@ -106,39 +106,6 @@ def detect_emotion(text):
         return emotion[:4] if emotion else ""
     except Exception:
         return ""
-
-# ==================== 访问密码验证（保护隐私，未登录不渲染任何内容） ====================
-if "password_correct" not in st.session_state:
-    st.session_state.password_correct = False
-
-if not st.session_state.password_correct:
-    # 密码页隐藏侧边栏与聊天输入框
-    st.markdown("""
-    <style>
-    section[data-testid="stSidebar"] {display: none !important;}
-    [data-testid="stChatInput"] {display: none !important;}
-    </style>
-    """, unsafe_allow_html=True)
-
-    # 居中密码卡片（治愈系风格，与整体主题一致）
-    _, center_col, _ = st.columns([1, 1.2, 1])
-    with center_col:
-        st.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
-        st.image(CAT_AVATAR, width=140)
-        st.markdown(
-            "<h2 style='text-align:center; color:#6C5B7B; margin-bottom:4px;'>🐱 树洞猫咪的小窝</h2>"
-            "<p style='text-align:center; color:#A89BB8; font-size:0.9rem;'>"
-            "这是只属于你的私密树洞，请输入访问密码喵~</p>",
-            unsafe_allow_html=True,
-        )
-        password = st.text_input("请输入访问密码", type="password", label_visibility="collapsed")
-        if password == st.secrets["APP_PASSWORD"]:
-            st.session_state.password_correct = True
-            st.rerun()  # 密码正确，刷新页面进入应用
-        elif password:
-            st.error("密码错误，请重试喵…")
-    st.stop()  # 密码不正确或未输入时，停止渲染后续内容
-
 # ==================== 自定义 CSS：治愈系树洞风格 ====================
 st.markdown("""
 <style>
