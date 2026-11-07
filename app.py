@@ -108,6 +108,27 @@ def detect_emotion(text):
         return ""
 # ==================== 自定义 CSS：治愈系树洞风格 ====================
 st.markdown("""
+/* 隐藏顶部彩色加载进度条 */
+div[data-testid="stStatusWidget"] {
+    display: none !important;
+}
+/* 隐藏最顶部的默认工具栏（包含 Deploy 按钮等） */
+.stApp > header {
+    display: none !important;
+}
+/* 隐藏左侧边栏和主界面的分割线 */
+div[data-testid="stSidebar"] {
+    border-right: none !important;
+}
+/* 隐藏聊天输入框（底部）顶部的边框横线 */
+div[data-testid="stChatInput"] {
+    border-top: none !important;
+    box-shadow: none !important;
+}
+/* 隐藏页面内容的默认分割线 */
+hr {
+    display: none !important;
+}
 <style>
 /* 整体背景：浅米色到淡薄荷绿柔和渐变，极简治愈系（兼容新版 Streamlit 多层容器） */
 .stApp, [data-testid="stMain"], [data-testid="stAppViewContainer"] {
