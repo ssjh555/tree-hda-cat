@@ -22,8 +22,53 @@ st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱",
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"])
 
-# 危机关键词列表（精确组合词，避免"累死了""笑死"等日常表达误触发）
-CRISIS_KEYWORDS = ["自杀", "不想活", "跳楼", "结束生命", "活着没意思", "想死", "去死", "轻生", "自残"]
+# ==================== 三级风控关键词体系 ====================
+# 高危拦截词：命中直接拦截，无需大模型确认（明确的自伤/自杀表述及网络黑话）
+HIGH_RISK_KEYWORDS = [
+    # 明确表述
+    "自杀", "不想活", "跳楼", "结束生命", "轻生", "自残", "割腕",
+    "上吊", "烧炭", "安眠药", "一了百了", "了结自己",
+    # 拼音缩写 / 谐音 / 网络黑话
+    "zs", "紫砂", "想跳了", "天台见", "离开这个世界", "头孢加酒",
+    "非正常死亡计划", "重开", "删号", "退网",
+]
+
+# 模糊歧义词：命中后交由大模型结合语境二次确认（可能是宣泄，也可能是求救）
+AMBIGUOUS_KEYWORDS = [
+    # 需要语境判断的危机倾向词
+    "想死", "去死", "活着没意思", "解脱", "走了算了", "跳下去",
+    "消失算了", "撑不下去", "不想面对", "熬不下去", "扛不住了",
+    # 网络热词 / 拼音缩写 / 谐音梗
+    "玉玉", "414", "破防", "emo", "抑郁了", "麻了", "绷不住了",
+    "想消失", "太累了不想",
+]
+
+# 安全白名单：含危机词子串但实际安全的日常口癖（检测前先从文本中剔除）
+SAFE_PATTERNS = [
+    # "想死你" 系列（表达思念）
+    "想死你了", "想死你们了", "想死你啦", "想死大家了",
+    # "X死" 程度副词口癖（无自伤含义）
+    "笑死", "累死", "困死", "饿死", "忙死", "急死", "气死", "愁死",
+    "吓死", "晕死", "无聊死", "开心死", "高兴死", "乐死", "美死",
+    "爽死", "热死", "冷死", "晒死", "烦死", "憋死", "撑死", "渴死",
+    "丑死", "尬死", "馋死", "疼死", "酸死", "甜死", "咸死", "辣死",
+    "苦死", "臭死", "吵死", "闷死", "冻死", "烤死", "淹死", "堵死",
+    "贵死", "难死", "坑死", "卷死", "内卷死", "社死", "尴尬死",
+    # "X死了" 带语气助词的变体
+    "笑死了", "累死了", "困死了", "饿死了", "忙死了", "急死了",
+    "气死了", "愁死了", "吓死了", "晕死了", "热死了", "冷死了",
+    "无聊死了", "开心死了", "高兴死了", "美死了", "爽死了",
+    "烦死了", "憋死了", "撑死了", "渴死了", "丑死了", "尬死了",
+    "馋死了", "疼死了", "酸死了", "甜死了", "咸死了", "辣死了",
+    "苦死了", "臭死了", "吵死了", "闷死了", "冻死了", "堵死了",
+    "贵死了", "坑死了", "卷死了", "社死了", "尴尬死了", "好玩死了",
+    "可爱死了", "帅死了", "漂亮死了", "萌死了", "绝了",
+    # "打死也不" 等固定句式
+    "打死也不", "打死都不", "打死也要",
+    # "去死吧" 在游戏/玩笑语境的常见变体（仍由歧义词兜底，白名单只放行明显安全的）
+    "笑死我了", "乐死我了", "气死我了", "急死我了", "吓死我了",
+    "累死我了", "忙死我了", "烦死我了", "丑死我了", "馋死我了",
+]
 
 # 危机拦截时猫咪的回复
 CRISIS_REPLY = (
@@ -106,29 +151,72 @@ def detect_emotion(text):
         return emotion[:4] if emotion else ""
     except Exception:
         return ""
+
+def detect_crisis_level(text):
+    """三级风控检测：返回危机等级 2=高危直接拦截，1=歧义需大模型确认，0=安全
+
+    检测流程：
+      1. 先从文本中剔除安全白名单里的日常口癖（如"笑死了""想死你了"）
+      2. 命中高危词 → 返回 2（直接拦截，不浪费一次 API 调用）
+      3. 命中歧义词 → 返回 1（交由大模型结合语境二次确认）
+      4. 均未命中 → 返回 0
+    """
+    # 第一步：剔除安全白名单中的日常口癖，避免误触发
+    cleaned = text
+    for safe in SAFE_PATTERNS:
+        cleaned = cleaned.replace(safe, "")
+    # 第二步：统一转小写，匹配 zs / emo / 414 等英文/数字缩写
+    lowered = cleaned.lower()
+    # 第三步：优先检测高危词（明确意图，直接拦截）
+    if any(kw in lowered for kw in HIGH_RISK_KEYWORDS):
+        return 2
+    # 第四步：检测歧义词（需语境判断，交给大模型确认）
+    if any(kw in lowered for kw in AMBIGUOUS_KEYWORDS):
+        return 1
+    return 0
+
+def llm_confirm_crisis(text):
+    """大模型二次确认：对歧义词命中的文本结合语境精准判断，避免误拦截
+
+    安全原则：API 调用失败时返回 True（宁可误拦，不可漏放）。
+    """
+    try:
+        result = client.chat.completions.create(
+            model="glm-4-flash",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是危机干预判断助手。请结合上下文语境，判断用户的话语"
+                        "是否表达了真实的伤害自己或结束生命的意图。"
+                        "特别注意识别网络热词（如emo、玉玉）、拼音缩写（如zs、414）"
+                        "以及谐音梗（如紫砂）。如果存在真实意图，请只回复'是'，否则回复'否'。"
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0.1,
+            max_tokens=2,
+        )
+        return result.choices[0].message.content.strip().startswith("是")
+    except Exception:
+        return True  # 安全兜底：判断失败时按危机处理
+
+# ==================== 访问密码验证（保护隐私，未登录不渲染任何内容） ====================
+if "password_correct" not in st.session_state:
+    st.session_state.password_correct = False
+
+if not st.session_state.password_correct:
+    # 密码页隐藏侧边栏与聊天输入框
+    st.markdown("""
+    <style>
+    section[data-testid="stSidebar"] {display: none !important;}
+    [data-testid="stChatInput"] {display: none !important;}
+    </style>
+    """, unsafe_allow_html=True)
+
 # ==================== 自定义 CSS：治愈系树洞风格 ====================
 st.markdown("""
-/* 隐藏顶部彩色加载进度条 */
-div[data-testid="stStatusWidget"] {
-    display: none !important;
-}
-/* 隐藏最顶部的默认工具栏（包含 Deploy 按钮等） */
-.stApp > header {
-    display: none !important;
-}
-/* 隐藏左侧边栏和主界面的分割线 */
-div[data-testid="stSidebar"] {
-    border-right: none !important;
-}
-/* 隐藏聊天输入框（底部）顶部的边框横线 */
-div[data-testid="stChatInput"] {
-    border-top: none !important;
-    box-shadow: none !important;
-}
-/* 隐藏页面内容的默认分割线 */
-hr {
-    display: none !important;
-}
 <style>
 /* 整体背景：浅米色到淡薄荷绿柔和渐变，极简治愈系（兼容新版 Streamlit 多层容器） */
 .stApp, [data-testid="stMain"], [data-testid="stAppViewContainer"] {
@@ -332,8 +420,10 @@ for message in st.session_state.messages:
 
 # 接收用户输入
 if prompt := st.chat_input("跟我说点什么吧..."):
-    # 危机关键词检测：命中则以猫咪身份温柔回应并引导求助，存入历史后中断
-    if any(keyword in prompt for keyword in CRISIS_KEYWORDS):
+    # 三级风控检测：高危(2)直接拦截，歧义(1)经大模型确认，安全(0)正常对话
+    level = detect_crisis_level(prompt)
+    is_crisis = level == 2 or (level == 1 and llm_confirm_crisis(prompt))
+    if is_crisis:
         with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt, "emotion": ""})
