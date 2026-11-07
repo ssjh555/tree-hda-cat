@@ -15,9 +15,8 @@ if __name__ == "__main__":
 
 import streamlit as st
 from openai import OpenAI
-
 # 设置页面配置：宽屏模式，侧边栏默认展开
-st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="树洞猫咪", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
 
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"])
