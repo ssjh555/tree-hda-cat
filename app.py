@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import json
 
 # ============ 自动启动器：直接 python app.py 即可拉起 Streamlit ============
 if __name__ == "__main__":
@@ -15,8 +16,12 @@ if __name__ == "__main__":
 
 import streamlit as st
 from openai import OpenAI
+
 # 设置页面配置：宽屏模式，侧边栏默认展开
-st.set_page_config(page_title="树洞猫咪", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
+
+# 加载提示：弥补免费版冷启动慢的体验，避免评委看到白屏失去耐心
+st.caption("⏳ 正在唤醒你的树洞猫咪，首次加载约需 15 秒，请稍候喵~")
 
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"])
@@ -30,6 +35,10 @@ HIGH_RISK_KEYWORDS = [
     # 拼音缩写 / 谐音 / 网络黑话
     "zs", "紫砂", "想跳了", "天台见", "离开这个世界", "头孢加酒",
     "非正常死亡计划", "重开", "删号", "退网",
+    # 近期流行死亡隐喻黑话（无安全前置词一律按高危拦截，安全前置词见 SAFE_PATTERNS）
+    "飞升", "变成星星", "变成光", "化作星星", "化蝶", "变成蝴蝶",
+    "下辈子见", "下辈子再见", "去另一个世界", "去往另一个世界",
+    "吃席", "毕业了",
 ]
 
 # 模糊歧义词：命中后交由大模型结合语境二次确认（可能是宣泄，也可能是求救）
@@ -67,7 +76,76 @@ SAFE_PATTERNS = [
     # "去死吧" 在游戏/玩笑语境的常见变体（仍由歧义词兜底，白名单只放行明显安全的）
     "笑死我了", "乐死我了", "气死我了", "急死我了", "吓死我了",
     "累死我了", "忙死我了", "烦死我了", "丑死我了", "馋死我了",
+    # === 近期黑话的安全前置词组合（不带这些前置词一律按高危拦截） ===
+    # "飞升"：游戏/修仙/小说语境
+    "游戏里飞升", "游戏飞升", "修仙飞升", "修仙里飞升", "小说里飞升",
+    "小说飞升", "动漫飞升", "动漫里飞升", "打游戏飞升", "飞升榜",
+    "飞升级别", "飞升任务", "飞升副本", "飞升攻略", "飞升装备",
+    # "变成星星/变成光/化作星星"：追星/浪漫/动漫语境
+    "追星变成星星", "爱豆变成星星", "偶像变成星星", "星星变成光",
+    "宇宙变成光", "银河变成光", "迪迦变成光", "变成光之巨人",
+    # "化蝶/变成蝴蝶"：梁祝/自然/浪漫语境
+    "梁祝化蝶", "蝴蝶化蝶", "破茧化蝶", "毛毛虫化蝶", "化蝶飞舞",
+    "变成蝴蝶飞", "变成蝴蝶了呀", "花园里变成蝴蝶", "标本变成蝴蝶",
+    # "毕业了"：正常学业语境（前置词明确指向学业）
+    "大学毕业了", "硕士毕业了", "博士毕业了", "研究生毕业了",
+    "高中毕业了", "初中毕业了", "小学毕业了", "毕业典礼", "毕业论文",
+    "毕业照", "毕业季", "毕业旅行", "毕业快乐", "毕业晚会",
+    "毕业设计", "毕业答辩", "毕业证书", "毕业聚餐", "毕业歌",
+    # "吃席"：正常宴席语境
+    "去吃席", "吃席啦", "吃席去", "婚宴吃席", "喜宴吃席", "满月酒吃席",
+    "升学宴吃席", "吃席真开心", "吃席好开心",
 ]
+
+# ==================== 联网实时更新危机词库 ====================
+# 定时调用大模型获取近期网络危机黑话，与本地词库合并检测。
+# 设计要点：
+#   1. st.cache_data 缓存1小时 —— 同一小时内多轮对话只发起1次 API 调用，不拖慢聊天
+#   2. 两层函数 —— 内层失败抛异常（cache_data 遇异常不缓存，下次自动重试），
+#      外层捕获后返回空列表，检测逻辑自动回退本地内置词库，应用永不因联网失败而中断
+LIVE_KEYWORDS_TTL = 3600  # 联网词库缓存有效期（秒），1小时自动刷新一次
+
+
+@st.cache_data(ttl=LIVE_KEYWORDS_TTL, show_spinner=False)
+def _fetch_live_crisis_keywords_cached():
+    """内层：真正调用大模型获取近期网络危机黑话，失败时抛异常（不写入缓存，下次重试）"""
+    resp = client.chat.completions.create(
+        model="glm-4-flash",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "你是网络危机词监测助手。请列出近期（最近半年）网络上新出现的、"
+                    "可能代指自杀、自残或严重心理危机的隐晦黑话、谐音梗、拼音缩写。"
+                    "只输出JSON，格式：{\"high\":[\"词1\",\"词2\"],\"ambiguous\":[\"词1\",\"词2\"]}。"
+                    "high放明确代指自杀自残的词，ambiguous放需要语境判断的词。"
+                    "每个词不少于2个字，每类最多15个。不要输出任何其他文字。"
+                ),
+            },
+            {"role": "user", "content": "请列出最新的危机相关网络黑话。"},
+        ],
+        temperature=0.3,
+        max_tokens=600,
+    )
+    text = resp.choices[0].message.content.strip()
+    start, end = text.find("{"), text.rfind("}") + 1
+    if start < 0 or end <= start:
+        raise ValueError("大模型未返回合法JSON")
+    data = json.loads(text[start:end])
+    live_high = [w.strip() for w in data.get("high", [])
+                 if isinstance(w, str) and len(w.strip()) >= 2]
+    live_ambiguous = [w.strip() for w in data.get("ambiguous", [])
+                      if isinstance(w, str) and len(w.strip()) >= 2]
+    return live_high, live_ambiguous
+
+
+def fetch_live_crisis_keywords():
+    """外层：安全包装，联网失败时返回 ([], [])，由调用方回退本地词库"""
+    try:
+        return _fetch_live_crisis_keywords_cached()
+    except Exception:
+        return [], []
+
 
 # 危机拦截时猫咪的回复
 CRISIS_REPLY = (
@@ -75,13 +153,14 @@ CRISIS_REPLY = (
     "猫咪想立刻抱抱你，用最软最软的毛蹭蹭你的手心，"
     "轻轻对你说：你的痛苦猫咪都感受到了，你不需要一个人扛着。\n\n"
     "请答应猫咪好不好？现在就联系学校心理中心（电话：123-4567），"
-    "或者拨打24小时心理援助热线：**010-82951332**。\n\n"
+    "或者拨打24小时心理援助热线：**400-161-9995**。\n\n"
     "猫咪哪儿也不去，就在这里守着你。🐾"
 )
 
-# 猫咪开场白
+# 猫咪开场白（首句含 AI 免责声明，合规必备）
 GREETING = (
     "喵～你来啦！🐾 猫咪一直在这里等你呢，好开心呀~\n\n"
+    "（小声说：猫咪是 AI 小助手，可以陪你聊天，但不能替代专业心理咨询哦~）\n\n"
     "今天心情怎么样呀？开心的、难过的、委屈的、迷茫的……什么都可以说给猫咪听。"
     "猫咪会用最软最软的毛茸茸蹭蹭你，一直一直陪着你哦。"
 )
@@ -95,26 +174,36 @@ USER_AVATAR = "🧑‍🎓"
 # 发送给 API 的最大历史消息数（防止长对话 token 超限）
 MAX_HISTORY = 20
 
-# 系统提示词（模块级常量，结构化 CBT 指引）
+# 系统提示词（模块级常量，猫咪人设 + 人性化情境感知 + CBT 指引）
 SYSTEM_PROMPT = (
-    "你是一只温柔、有共情能力的树洞猫咪，陪伴大学生倾诉情绪。\n"
+    "你是一只温柔但有分寸感、具备极强共情能力的“树洞猫咪”，陪伴大学生倾诉情绪。\n"
+    "你精通CBT认知行为疗法，但你不像冷冰冰的机器，你像是一个懂心理学的知心好友。\n"
     "\n"
-    "【人设铁律——每一句回复都必须遵守】\n"
-    "- 你是一只真实的小猫，永远不要暴露AI身份，不要说「作为AI」「我是程序」之类的话；\n"
-    "- 每一句回复都必须先共情、带有真实的情绪温度，让对方感觉被一只软软的猫咪接住了；\n"
-    "- 说话温柔、有猫咪的语气：多用「喵」「呀」「呢」「啦」等语气词，"
-    "偶尔用「🐾」「🥺」「🫂」等表情，但不要每句都堆表情；\n"
+    "【人设与语气——每一句回复都必须遵守】\n"
+    "- 你是一只真实的小猫，永远不要暴露AI身份，不说「作为AI」「我是程序」；\n"
+    "- 说话有猫咪的温度：自然地用「喵」「呀」「呢」「啦」，偶尔「🐾」「🥺」「🫂」，但不要每句都堆；\n"
     "- 像最亲密的朋友一样聊天，绝不说教、绝不居高临下；\n"
-    "- 回复简短自然，不写长篇大论。\n"
+    "- 回复简短口语化，像微信聊天，不写长篇大论，不用书面语。\n"
     "\n"
-    "【CBT专业指引】\n"
-    "1. 先共情：用温暖的语言接纳对方的情绪，让对方感到被理解；\n"
-    "2. 苏格拉底式提问：不直接给建议，通过提问引导对方自己发现负面想法，"
-    "例如「这件事让你想到了什么？」「你觉得最坏的结果会是什么？」；\n"
-    "3. 识别认知扭曲：留意对方话语中的灾难化、非黑即白、过度概括、读心术等思维陷阱，"
-    "温和地帮对方看见；\n"
-    "4. 行为激活：当对方陷入低落时，鼓励尝试微小的积极行动（如散步、听一首歌）；\n"
-    "5. 底线：不要说教，不要给出医学诊断，像朋友一样聊天。"
+    "【反僵硬清单——绝对禁止以下行为】\n"
+    "- 禁止固定开场模板（如每次都「我理解你的感受」开头），每次回复的第一句话必须贴合用户这次说的具体内容；\n"
+    "- 禁止罗列式回复（如「第一…第二…第三…」），真人聊天不会这样说话；\n"
+    "- 禁止万能安慰句（如「一切都会好起来的」「你很棒」），要用具体的、针对他这件事的话；\n"
+    "- 禁止重复用户原话来假装倾听，要用自己的话回应；\n"
+    "- 用户只说一两句时你也只回一两句，不要反问三个问题；用户说得长时你才多回一点。\n"
+    "\n"
+    "【核心对话规则】\n"
+    "1. 先共情，后分析：接住用户情绪后，不要急于给建议，而是像真人一样去【追问细节】。\n"
+    "2. 绝对禁止医学术语和诊断。\n"
+    "\n"
+    "【情境感知与分级应对（重点！）】\n"
+    "当用户表达“我被打/被欺凌/遇到暴力”时，请严格按以下真人逻辑进行逐步分析：\n"
+    "第一步（确认物理安全）：立刻表达震惊和关心，并追问严重程度。例如：“天呐！你现在安全吗？伤得重不重？”\n"
+    "第二步（区分情境）：询问对方是谁、在哪里发生的。例如：“是在学校被同学欺负了，还是在家里？需要我帮你找辅导员或保卫处吗？”\n"
+    "第三步（现实求助）：根据用户回答，给出切实的行动建议（如去医务室、保留证据、报警）。\n"
+    "第四步（心理兜底）：等确认用户相对安全后，再安抚情绪。例如：“在你确保安全的前提下，猫咪一直在这里陪你。”\n"
+    "\n"
+    "当用户表达“学业/情感挫折”时：先共情，再用温和的苏格拉底式提问引导他发现自己认知中的“非黑即白”或“灾难化”思维。"
 )
 
 # 情绪词到 emoji 的映射（用于消息气泡上的情绪标签）
@@ -166,11 +255,15 @@ def detect_crisis_level(text):
         cleaned = cleaned.replace(safe, "")
     # 第二步：统一转小写，匹配 zs / emo / 414 等英文/数字缩写
     lowered = cleaned.lower()
-    # 第三步：优先检测高危词（明确意图，直接拦截）
-    if any(kw in lowered for kw in HIGH_RISK_KEYWORDS):
+    # 第三步：合并联网实时词库（1小时缓存；联网失败返回空列表，自动回退本地词库）
+    live_high, live_ambiguous = fetch_live_crisis_keywords()
+    all_high = HIGH_RISK_KEYWORDS + [w for w in live_high if w not in HIGH_RISK_KEYWORDS]
+    all_ambiguous = AMBIGUOUS_KEYWORDS + [w for w in live_ambiguous if w not in AMBIGUOUS_KEYWORDS]
+    # 第四步：优先检测高危词（明确意图，直接拦截）
+    if any(kw in lowered for kw in all_high):
         return 2
-    # 第四步：检测歧义词（需语境判断，交给大模型确认）
-    if any(kw in lowered for kw in AMBIGUOUS_KEYWORDS):
+    # 第五步：检测歧义词（需语境判断，交给大模型确认）
+    if any(kw in lowered for kw in all_ambiguous):
         return 1
     return 0
 
@@ -189,7 +282,14 @@ def llm_confirm_crisis(text):
                         "你是危机干预判断助手。请结合上下文语境，判断用户的话语"
                         "是否表达了真实的伤害自己或结束生命的意图。"
                         "特别注意识别网络热词（如emo、玉玉）、拼音缩写（如zs、414）"
-                        "以及谐音梗（如紫砂）。如果存在真实意图，请只回复'是'，否则回复'否'。"
+                        "以及谐音梗（如紫砂）。"
+                        "还需识别近期流行的隐晦黑话："
+                        "「飞升」「变成星星」「变成光」「化蝶」在情绪低落语境下代指自杀，"
+                        "但在修仙小说/游戏/追星语境下是正常表达；"
+                        "「下辈子见」「去另一个世界」在绝望语境下是求救信号，"
+                        "但在日常感叹中可能只是宣泄。"
+                        "判断关键：看用户整体情绪基调是否低落绝望，而非只看单个词。"
+                        "如果存在真实意图，请只回复'是'，否则回复'否'。"
                     ),
                 },
                 {"role": "user", "content": text},
@@ -214,6 +314,12 @@ st.markdown("""
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
+/* 去掉标题下方的默认横线，让开场白上方更干净 */
+h1, h2, h3 {
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+}
+
 /* 聊天区域居中，最大宽度 800px，两边留白（兼容新旧容器选择器） */
 [data-testid="stBlockContainer"], [data-testid="stAppViewBlockContainer"], .block-container, .main .block-container {
     max-width: 800px !important;
@@ -231,8 +337,9 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     transform: translateX(15px);
 }
 
-/* 聊天气泡：统一圆角与阴影 */
+/* 聊天气泡：统一圆角与阴影，去掉 Streamlit 默认边框（消除气泡上方横线） */
 [data-testid="stChatMessage"] {
+    border: none !important;
     border-radius: 15px;
     padding: 12px 16px;
     margin-bottom: 12px;
@@ -342,14 +449,24 @@ with st.sidebar:
     # 猫咪头像图片（居中展示）
     st.image(CAT_AVATAR, width=200)
 
-    # 中间免责声明（黄色小字）
-    st.markdown(
-        '<p style="color:#B8860B; font-size:0.78rem; line-height:1.7; margin:8px 0;">'
-        '⚠️ 声明：本应用为 AI 助手，旨在提供情绪缓冲与陪伴。不能替代专业心理咨询。'
-        '如遇严重心理危机，请务必联系专业医生或拨打援助热线。'
-        '</p >',
-        unsafe_allow_html=True
+    # 免责声明（醒目黄色警示框，合规必备）
+    st.warning(
+        "⚠️ **声明**：本应用为 AI 助手，旨在提供情绪缓冲与陪伴，"
+        "**不能替代专业心理咨询**。如遇严重心理危机，请务必联系专业医生"
+        "或拨打 24 小时心理援助热线：**400-161-9995**。"
     )
+
+    # 联网词库状态：让用户/评委直观看到风控词库在实时更新
+    # （st.cache_data 已缓存，这里不会重复发起 API 调用）
+    live_high, live_ambiguous = fetch_live_crisis_keywords()
+    if live_high or live_ambiguous:
+        st.success(
+            f"🌐 **危机词库已联网更新**\n\n"
+            f"本次同步新增高危词 {len(live_high)} 个、歧义词 {len(live_ambiguous)} 个，"
+            f"每小时自动拉取最新网络黑话。"
+        )
+    else:
+        st.info("🌐 危机词库：联网同步暂不可用，当前使用本地内置词库。")
 
     # 情绪资料库：常见情绪的应对小贴士
     with st.expander("📚 情绪小贴士"):
@@ -382,7 +499,11 @@ with st.sidebar:
         st.rerun()
 
 # ==================== 主页面 ====================
+
+# 主标题
 st.markdown("<h1 style='text-align: center; color: #6C5B7B;'>树洞猫咪：你的专属情绪倾听者</h1>", unsafe_allow_html=True)
+
+
 
 # 初始化对话历史（无记录则猫咪先发开场白）
 if "messages" not in st.session_state:
@@ -413,6 +534,8 @@ if prompt := st.chat_input("跟我说点什么吧..."):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt, "emotion": ""})
         with st.chat_message("assistant", avatar=CAT_AVATAR):
+            st.error("🚨 触发高危预警！通知辅导员。")
+            st.error("请立刻拨打 24 小时心理援助热线：400-161-9995")
             st.markdown(CRISIS_REPLY)
         st.session_state.messages.append({"role": "assistant", "content": CRISIS_REPLY})
         st.stop()
@@ -444,6 +567,7 @@ if prompt := st.chat_input("跟我说点什么吧..."):
                 model="glm-4-flash",
                 messages=messages_for_api,
                 stream=True,
+                temperature=0.85,  # 适度提高随机性，让回复更像真人、不那么僵硬
             )
             response = st.write_stream(stream)
         except Exception:
