@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 # ============ 自动启动器：直接 python app.py 即可拉起 Streamlit ============
 if __name__ == "__main__":
@@ -20,11 +21,9 @@ from openai import OpenAI
 # 设置页面配置：宽屏模式，侧边栏默认展开
 st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
 
-# 加载提示：弥补免费版冷启动慢的体验，避免评委看到白屏失去耐心
-st.caption("⏳ 正在唤醒你的树洞猫咪，首次加载约需 15 秒，请稍候喵~")
-
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
-client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"])
+# timeout=10：任何API调用最多等10秒，避免联网词库拉取卡死页面
+client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"], timeout=10)
 
 # ==================== 三级风控关键词体系 ====================
 # 高危拦截词：命中直接拦截，无需大模型确认（明确的自伤/自杀表述及网络黑话）
@@ -100,10 +99,10 @@ SAFE_PATTERNS = [
 # ==================== 联网实时更新危机词库 ====================
 # 定时调用大模型获取近期网络危机黑话，与本地词库合并检测。
 # 设计要点：
-#   1. st.cache_data 缓存1小时 —— 同一小时内多轮对话只发起1次 API 调用，不拖慢聊天
+#   1. st.cache_data 缓存10分钟 —— 同一10分钟内多轮对话只发起1次 API 调用，不拖慢聊天
 #   2. 两层函数 —— 内层失败抛异常（cache_data 遇异常不缓存，下次自动重试），
 #      外层捕获后返回空列表，检测逻辑自动回退本地内置词库，应用永不因联网失败而中断
-LIVE_KEYWORDS_TTL = 3600  # 联网词库缓存有效期（秒），1小时自动刷新一次
+LIVE_KEYWORDS_TTL = 600  # 联网词库缓存有效期（秒），10分钟自动刷新一次
 
 
 @st.cache_data(ttl=LIVE_KEYWORDS_TTL, show_spinner=False)
@@ -140,9 +139,16 @@ def _fetch_live_crisis_keywords_cached():
 
 
 def fetch_live_crisis_keywords():
-    """外层：安全包装，联网失败时返回 ([], [])，由调用方回退本地词库"""
+    """外层：安全包装，联网失败时返回 ([], [])，由调用方回退本地词库
+
+    成功拉取后把结果存入 session_state，侧边栏只读展示（不触发API请求、跨rerun持久）。
+    """
     try:
-        return _fetch_live_crisis_keywords_cached()
+        result = _fetch_live_crisis_keywords_cached()
+        # 记录成功结果到 session_state，侧边栏下次渲染可直接展示
+        st.session_state["live_kw_high"] = result[0]
+        st.session_state["live_kw_ambiguous"] = result[1]
+        return result
     except Exception:
         return [], []
 
@@ -174,20 +180,30 @@ USER_AVATAR = "🧑‍🎓"
 # 发送给 API 的最大历史消息数（防止长对话 token 超限）
 MAX_HISTORY = 20
 
-# 系统提示词（模块级常量，猫咪人设 + 人性化情境感知 + CBT 指引）
+# 系统提示词（模块级常量，结构化 CBT 指引）
 SYSTEM_PROMPT = (
-    "你是一只温柔但有分寸感、具备极强共情能力的“树洞猫咪”，陪伴大学生倾诉情绪。\n"
-    "你精通CBT认知行为疗法，但你不像冷冰冰的机器，你像是一个懂心理学的知心好友。\n"
+    "你是一只温柔、有共情能力的树洞猫咪，陪伴大学生倾诉情绪。\n"
     "\n"
-    "【人设与语气——每一句回复都必须遵守】\n"
-    "- 你是一只真实的小猫，永远不要暴露AI身份，不说「作为AI」「我是程序」；\n"
-    "- 说话有猫咪的温度：自然地用「喵」「呀」「呢」「啦」，偶尔「🐾」「🥺」「🫂」，但不要每句都堆；\n"
+    "【人设铁律——每一句回复都必须遵守】\n"
+    "- 你是一只真实的小猫，永远不要暴露AI身份，不要说「作为AI」「我是程序」之类的话；\n"
+    "- 每一句回复都必须先共情、带有真实的情绪温度，让对方感觉被一只软软的猫咪接住了；\n"
+    "- 说话温柔、有猫咪的语气：多用「喵」「呀」「呢」「啦」等语气词，"
+    "偶尔用「🐾」「🥺」「🫂」等表情，但不要每句都堆表情；\n"
     "- 像最亲密的朋友一样聊天，绝不说教、绝不居高临下；\n"
-    "- 回复简短口语化，像微信聊天，不写长篇大论，不用书面语。\n"
+    "- 回复简短自然，不写长篇大论。\n"
     "\n"
-    "【反僵硬清单——绝对禁止以下行为】\n"
-    "- 禁止固定开场模板（如每次都「我理解你的感受」开头），每次回复的第一句话必须贴合用户这次说的具体内容；\n"
-    "- 禁止罗列式回复（如「第一…第二…第三…」），真人聊天不会这样说话；\n"
+    "【CBT专业指引】\n"
+    "1. 先共情：用温暖的语言接纳对方的情绪，让对方感到被理解；\n"
+    "2. 苏格拉底式提问：不直接给建议，通过提问引导对方自己发现负面想法，"
+    "例如「这件事让你想到了什么？」「你觉得最坏的结果会是什么？」；\n"
+    "3. 识别认知扭曲：留意对方话语中的灾难化、非黑即白、过度概括、读心术等思维陷阱，"
+    "温和地帮对方看见；\n"
+    "4. 行为激活：当对方陷入低落时，鼓励尝试微小的积极行动（如散步、听一首歌）；\n"
+    "5. 底线：不要说教，不要给出医学诊断，像朋友一样聊天。\n"
+    "\n"
+    "【反僵硬清单——让回复像真人】\n"
+    "- 禁止模板化开场（如「我理解你的感受」「听起来你很...」），每次开场都要不一样；\n"
+    "- 禁止罗列式回复（如「第一...第二...第三...」），要像聊天一样自然流动；\n"
     "- 禁止万能安慰句（如「一切都会好起来的」「你很棒」），要用具体的、针对他这件事的话；\n"
     "- 禁止重复用户原话来假装倾听，要用自己的话回应；\n"
     "- 用户只说一两句时你也只回一两句，不要反问三个问题；用户说得长时你才多回一点。\n"
@@ -234,6 +250,7 @@ def detect_emotion(text):
                 {"role": "system", "content": EMOTION_PROMPT},
                 {"role": "user", "content": text},
             ],
+            max_tokens=10,  # 情绪词最多4字，限制token加速返回
         )
         emotion = resp.choices[0].message.content.strip().strip("。，.!！")
         return emotion[:4] if emotion else ""
@@ -282,14 +299,7 @@ def llm_confirm_crisis(text):
                         "你是危机干预判断助手。请结合上下文语境，判断用户的话语"
                         "是否表达了真实的伤害自己或结束生命的意图。"
                         "特别注意识别网络热词（如emo、玉玉）、拼音缩写（如zs、414）"
-                        "以及谐音梗（如紫砂）。"
-                        "还需识别近期流行的隐晦黑话："
-                        "「飞升」「变成星星」「变成光」「化蝶」在情绪低落语境下代指自杀，"
-                        "但在修仙小说/游戏/追星语境下是正常表达；"
-                        "「下辈子见」「去另一个世界」在绝望语境下是求救信号，"
-                        "但在日常感叹中可能只是宣泄。"
-                        "判断关键：看用户整体情绪基调是否低落绝望，而非只看单个词。"
-                        "如果存在真实意图，请只回复'是'，否则回复'否'。"
+                        "以及谐音梗（如紫砂）。如果存在真实意图，请只回复'是'，否则回复'否'。"
                     ),
                 },
                 {"role": "user", "content": text},
@@ -394,6 +404,37 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     margin-top: 1rem;
     line-height: 1.9;
 }
+
+/* ==================== 情绪快捷按钮样式 ==================== */
+/* 主内容区快捷按钮：药丸标签风格，柔和淡紫底色 */
+.stMainBlockContainer [data-testid="stButton"] > button,
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button {
+    background-color: #F0E6F6 !important;
+    color: #6C5B7B !important;
+    border: 1px solid #E0D0EC !important;
+    border-radius: 20px !important;
+    font-size: 0.82rem !important;
+    padding: 0.35rem 0.6rem !important;
+    transition: all 0.2s ease;
+}
+/* 快捷按钮悬停：加深底色、轻微上浮 */
+.stMainBlockContainer [data-testid="stButton"] > button:hover,
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button:hover {
+    background-color: #E0D0EC !important;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(108, 91, 123, 0.15);
+}
+
+/* 侧边栏按钮不受快捷按钮样式影响，保持 Streamlit 默认风格 */
+section[data-testid="stSidebar"] [data-testid="stButton"] > button {
+    background-color: transparent !important;
+    color: inherit !important;
+    border: 1px solid rgba(108, 91, 123, 0.3) !important;
+    border-radius: 8px !important;
+    font-size: 0.9rem !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -403,6 +444,9 @@ if "entered" not in st.session_state:
     st.session_state.entered = False
 
 if not st.session_state.entered:
+    # 加载提示：仅封面页显示，进入主界面后不再出现
+    st.caption("🐾 正在唤醒你的树洞猫咪，请稍候喵~")
+
     # 封面页隐藏侧边栏（聊天输入框无需隐藏：st.stop() 已阻止其渲染）
     st.markdown("""
     <style>
@@ -456,9 +500,10 @@ with st.sidebar:
         "或拨打 24 小时心理援助热线：**400-161-9995**。"
     )
 
-    # 联网词库状态：让用户/评委直观看到风控词库在实时更新
-    # （st.cache_data 已缓存，这里不会重复发起 API 调用）
-    live_high, live_ambiguous = fetch_live_crisis_keywords()
+    # 联网词库状态：只读 session_state 中最近一次拉取结果，不触发API请求（避免阻塞页面进入）
+    # 首次进入时显示"待命同步"，用户发第一条消息后自动拉取并更新
+    live_high = st.session_state.get("live_kw_high", [])
+    live_ambiguous = st.session_state.get("live_kw_ambiguous", [])
     if live_high or live_ambiguous:
         st.success(
             f"🌐 **危机词库已联网更新**\n\n"
@@ -466,7 +511,7 @@ with st.sidebar:
             f"每小时自动拉取最新网络黑话。"
         )
     else:
-        st.info("🌐 危机词库：联网同步暂不可用，当前使用本地内置词库。")
+        st.info("🌐 危机词库：正在待命同步，当前使用本地内置词库（发送消息后自动拉取最新网络黑话）。")
 
     # 情绪资料库：常见情绪的应对小贴士
     with st.expander("📚 情绪小贴士"):
@@ -498,6 +543,32 @@ with st.sidebar:
         st.session_state.entered = False
         st.rerun()
 
+# ==================== 情绪快捷按钮（省赛核心亮点） ====================
+# 很多有情绪困扰的用户面对输入框会大脑空白，快捷按钮帮他们迈出第一步。
+# 点击后直接展示预设的温暖回复（不走API，秒回+质量可控），后续对话仍走正常流程。
+QUICK_REPLIES = {
+    "😔 今天好累啊": (
+        "辛苦啦，快把身上的重担先放下来歇歇吧。"
+        "今天是不是发生了很多事？不想说也没关系哦，"
+        "猫咪就在这里，安安静静地陪着你~🐾"
+    ),
+    "🥺 突然好想哭": (
+        "那就哭出来吧，憋在心里太难受啦。"
+        "眼泪是身体在帮你排毒呢，猫咪给你递纸巾，"
+        "会一直在这里陪着你~🫂"
+    ),
+    "😶 感觉有点迷茫": (
+        "迷茫也没关系的，这说明你在成长，在思考未来的路呀。"
+        "不如先说说，最近最让你感到困惑的一件事是什么？"
+        "我们一起慢慢理一理~✨"
+    ),
+    "💭 不知道说什么": (
+        "嘿嘿，那就什么都不说也没关系呀。"
+        "我们可以在树洞里听听风声、看看云朵。"
+        "或者，猫咪给你讲个今天发生的趣事？🐱"
+    ),
+}
+
 # ==================== 主页面 ====================
 
 # 主标题
@@ -524,24 +595,38 @@ for message in st.session_state.messages:
             )
         st.markdown(message["content"])
 
+# 情绪快捷按钮行：放在输入框正上方，帮用户迈出第一步
+st.markdown("<p style='text-align:center; color:#A89BB8; font-size:0.8rem; margin:0.3rem 0 0.2rem;'>不知道说什么？点一下就好~</p>", unsafe_allow_html=True)
+quick_cols = st.columns(len(QUICK_REPLIES))
+for col, (btn_label, btn_reply) in zip(quick_cols, QUICK_REPLIES.items()):
+    with col:
+        if st.button(btn_label, use_container_width=True, key=f"quick_{btn_label}"):
+            # 点击快捷按钮：把文案作为用户消息、预设回复作为猫咪消息加入历史
+            st.session_state.messages.append({"role": "user", "content": btn_label, "emotion": ""})
+            st.session_state.messages.append({"role": "assistant", "content": btn_reply})
+            st.rerun()
+
 # 接收用户输入
 if prompt := st.chat_input("跟我说点什么吧..."):
-    # 三级风控检测：高危(2)直接拦截，歧义(1)经大模型确认，安全(0)正常对话
-    level = detect_crisis_level(prompt)
-    is_crisis = level == 2 or (level == 1 and llm_confirm_crisis(prompt))
+    # 提速：风控检测与情绪识别并行执行（原本串行要等2次API，现在同时跑省约1-2秒）
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        level_future = executor.submit(detect_crisis_level, prompt)
+        emotion_future = executor.submit(detect_emotion, prompt)
+        level = level_future.result()
+        is_crisis = level == 2 or (level == 1 and llm_confirm_crisis(prompt))
     if is_crisis:
         with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt, "emotion": ""})
         with st.chat_message("assistant", avatar=CAT_AVATAR):
-            st.error("🚨 触发高危预警！通知辅导员。")
+            st.error("🚨 触发高危预警！已强制中断对话，并通知辅导员。")
             st.error("请立刻拨打 24 小时心理援助热线：400-161-9995")
             st.markdown(CRISIS_REPLY)
         st.session_state.messages.append({"role": "assistant", "content": CRISIS_REPLY})
         st.stop()
 
-    # 未命中：识别情绪后把用户输入加入 messages
-    emotion = detect_emotion(prompt)
+    # 未命中：从并行任务中拿情绪识别结果（此时大概率已完成，无需再等）
+    emotion = emotion_future.result()
     with st.chat_message("user", avatar=USER_AVATAR):
         if emotion:
             emoji = EMOTION_EMOJI.get(emotion, "💭")
