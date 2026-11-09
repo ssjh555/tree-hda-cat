@@ -4,6 +4,7 @@ import subprocess
 import json
 import uuid
 import random
+import base64
 from datetime import datetime
 
 # ============ 自动启动器：直接 python app.py 即可拉起 Streamlit ============
@@ -401,6 +402,68 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     transform: translateX(15px);
 }
 
+/* ===== 侧边栏主题卡片 ===== */
+/* 猫咪语录卡片：淡紫底 + 左侧爪印竖线 */
+.side-quote {
+    background: linear-gradient(135deg, #F5F0FA, #EDE4F3);
+    border-left: 3px solid #C77DA5;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    font-size: 0.88rem;
+    color: #5D4E6D;
+    line-height: 1.7;
+}
+.side-quote .quote-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #8E6FAE;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+/* 紧急求助卡片：暖红底 + 醒目热线 */
+.side-emergency {
+    background: linear-gradient(135deg, #FFF0EE, #FFE4E0);
+    border-left: 3px solid #E07856;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    font-size: 0.85rem;
+    color: #8B4A3A;
+    line-height: 1.8;
+}
+.side-emergency .emg-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+}
+.side-emergency .emg-phone {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #D4502E;
+    letter-spacing: 0.5px;
+}
+
+/* 今日温柔小任务卡片：薄荷绿底 */
+.side-task {
+    background: linear-gradient(135deg, #EFF7EF, #E2F0E4);
+    border-left: 3px solid #6BAF7A;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    font-size: 0.85rem;
+    color: #3E6B4A;
+    line-height: 1.7;
+}
+.side-task .task-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #5A9168;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
 /* 聊天气泡：统一圆角与阴影，去掉 Streamlit 默认边框（消除气泡上方横线） */
 [data-testid="stChatMessage"] {
     border: none !important;
@@ -428,22 +491,37 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
 }
 
 /* ==================== 封面页样式 ==================== */
-/* 封面容器：全屏垂直居中 */
+/* 封面容器：内容自然排列，紧凑无大片留白 */
 .cover-container {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 72vh;
     text-align: center;
 }
-/* 封面主标题 */
+/* 封面主标题：暖紫→柔粉渐变文字 */
 .cover-title {
     font-size: 2.8rem;
     font-weight: 700;
-    color: #6C5B7B;
+    background: linear-gradient(90deg, #6C5B7B, #C77DA5);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
     margin: 0;
     letter-spacing: 3px;
+}
+/* 封面极细渐变横线：浅蓝→透明 */
+.cover-hairline {
+    height: 1px;
+    width: 280px;
+    margin: 0.8rem auto 0.5rem auto;
+    background: linear-gradient(to right, #B8D4E3, transparent);
+}
+/* 封面情绪安全区标签（🌱 淡绿小字） */
+.cover-safe-tag {
+    font-size: 0.75rem;
+    color: #9BB5A8;
+    margin: 0.5rem 0 0 0;
 }
 /* 封面副标题 */
 .cover-subtitle {
@@ -457,6 +535,98 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     color: #A89BB8;
     margin-top: 1rem;
     line-height: 1.9;
+}
+/* 封面猫爪装饰行：缓慢呼吸动画，营造生命感 */
+.cover-paws {
+    font-size: 1.4rem;
+    letter-spacing: 0.6em;
+    margin: 0.2rem 0;
+    animation: cover-breathe 3s ease-in-out infinite;
+}
+@keyframes cover-breathe {
+    0%, 100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); }
+}
+/* 封面特性药丸标签行 */
+.cover-features {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: center;
+    margin-top: 1.1rem;
+    flex-wrap: wrap;
+}
+.cover-feature {
+    font-size: 0.78rem;
+    color: #8E7CA8;
+    background: #F0E6F6;
+    border: 1px solid #E0D0EC;
+    border-radius: 20px;
+    padding: 0.3rem 0.7rem;
+}
+/* 封面分隔线：线-爪-线 */
+.cover-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 1.2rem auto 0.8rem auto;
+    max-width: 360px;
+}
+.cover-divider .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #C9B8D9);
+}
+.cover-divider .line:last-child {
+    background: linear-gradient(to left, transparent, #C9B8D9);
+}
+.cover-divider .dot {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+/* 封面漂浮装饰：星星/月亮缓动 */
+.cover-float {
+    position: relative;
+    height: 0;
+    font-size: 1.1rem;
+}
+.cover-float span {
+    position: absolute;
+    animation: cover-floaty 4s ease-in-out infinite;
+    opacity: 0.55;
+}
+.cover-float span:nth-child(1) { left: 12%; top: -180px; animation-delay: 0s; }
+.cover-float span:nth-child(2) { left: 82%; top: -160px; animation-delay: 1.2s; }
+.cover-float span:nth-child(3) { left: 25%; top: -120px; animation-delay: 2.1s; font-size: 0.8rem; }
+.cover-float span:nth-child(4) { left: 70%; top: -200px; animation-delay: 0.6s; font-size: 0.85rem; }
+@keyframes cover-floaty {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(-8px); opacity: 0.75; }
+}
+/* 封面底部温暖引言 */
+.cover-quote {
+    font-size: 0.8rem;
+    color: #B8ACC4;
+    margin-top: 0.7rem;
+    font-style: italic;
+    letter-spacing: 0.05em;
+}
+/* 封面猫咪头像：完美居中 + 柔光呼吸 */
+.cover-avatar-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 0.6rem 0 1.2rem;
+}
+.cover-avatar {
+    width: 170px;
+    border-radius: 24px;
+    border: 3px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 8px 28px rgba(199, 125, 165, 0.28), 0 2px 8px rgba(108, 91, 123, 0.12);
+    animation: cover-avatar-breathe 3.5s ease-in-out infinite;
+}
+@keyframes cover-avatar-breathe {
+    0%, 100% { transform: scale(1); box-shadow: 0 8px 28px rgba(199, 125, 165, 0.28), 0 2px 8px rgba(108, 91, 123, 0.12); }
+    50% { transform: scale(1.03); box-shadow: 0 12px 36px rgba(199, 125, 165, 0.42), 0 2px 8px rgba(108, 91, 123, 0.12); }
 }
 
 /* ==================== 情绪快捷按钮样式 ==================== */
@@ -488,6 +658,39 @@ section[data-testid="stSidebar"] [data-testid="stButton"] > button {
     font-size: 0.9rem !important;
     transform: none !important;
     box-shadow: none !important;
+}
+/* ===== 两侧固定治愈装饰：贴边 fixed + 点击穿透 + 半透明，不随页面滚动 ===== */
+.chat-deco {
+    position: fixed;        /* 固定在浏览器左右边缘，不随页面滚动 */
+    display: flex;
+    flex-direction: column; /* 竖排排列 */
+    gap: 1.5rem;
+    font-size: 1.3rem;
+    pointer-events: none;   /* 极其重要：点击/滚动完全穿透，不阻挡任何交互 */
+    z-index: 0;             /* -1 会被 .stApp 不透明背景遮挡不可见；0 + pointer-events:none 同样保证不挡操作 */
+    user-select: none;
+    opacity: 0.2;           /* 若隐若现，不遮挡文字 */
+}
+/* 左侧边缘靠下：🌿 🐾 竖排 */
+.chat-deco-left {
+    left: 1.6rem;
+    bottom: 10vh;
+}
+/* 右侧边缘靠上：🌙 ✨ 竖排 */
+.chat-deco-right {
+    right: 1.6rem;
+    top: 10vh;
+}
+/* 轻柔漂浮动画 */
+@keyframes chat-deco-float {
+    0%, 100% { translate: 0 0; }
+    50% { translate: 0 -8px; }
+}
+.chat-deco span { animation: chat-deco-float 6s ease-in-out infinite; }
+.chat-deco span:nth-child(2) { animation-delay: 1.5s; }
+/* 窄屏隐藏，避免遮挡内容 */
+@media (max-width: 1000px) {
+    .chat-deco { display: none; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -624,12 +827,22 @@ if not st.session_state.entered:
     </style>
     """, unsafe_allow_html=True)
 
+    # 首页两侧固定装饰：fixed 贴边 + pointer-events:none 点击穿透，不随页面滚动
+    st.markdown(
+        '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span></div>'
+        '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span></div>',
+        unsafe_allow_html=True,
+    )
+
     # 登录页欢迎语（紧凑居中 + 装饰点缀）
     st.markdown("""
+    <div class="cover-float"><span>✨</span><span>🌙</span><span>☁️</span><span>⭐</span></div>
     <div class="cover-container">
         <div class="cover-paws">🐾 🐱 🐾</div>
-        <h1 class="cover-title">🐱 树洞猫咪</h1>
+        <h1 class="cover-title">🐾 树洞猫咪</h1>
         <p class="cover-subtitle">你的专属情绪倾听者</p>
+        <div class="cover-hairline"></div>
+        <p class="cover-safe-tag">🌱 情绪安全区 | 绝对保密</p>
         <p class="cover-desc">
             在这里，你可以卸下所有伪装。<br>
             没有评判，没有说教，只有一只温柔的猫咪愿意听你说话。
@@ -639,19 +852,25 @@ if not st.session_state.entered:
             <div class="cover-feature">🐾 温柔陪伴</div>
             <div class="cover-feature">💬 绝不存储</div>
         </div>
+        <p class="cover-quote">"每只小猫都值得被这个世界温柔以待 🐾"</p>
     </div>
     <div class="cover-divider"><span class="line"></span><span class="dot">🐾</span><span class="line"></span></div>
     """, unsafe_allow_html=True)
 
-    # 猫咪头像（居中展示）
-    _, img_col, _ = st.columns([1, 1.2, 1])
-    with img_col:
-        st.image(CAT_AVATAR, width=160)
+    # 猫咪头像（HTML 完美居中 + 柔光呼吸动画，不受 Streamlit 列布局左对齐影响）
+    with open(CAT_AVATAR, "rb") as _f:
+        _avatar_b64 = base64.b64encode(_f.read()).decode()
+    st.markdown(
+        f'<div class="cover-avatar-wrap">'
+        f'<img src="data:image/png;base64,{_avatar_b64}" class="cover-avatar" alt="树洞猫咪">'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-    # 学生登录表单（学号 + 手机号必填，仅心理老师可见）
+    # 用户登录表单（学号 + 手机号必填，仅心理老师可见）
     _, form_col, _ = st.columns([1, 1.2, 1])
     with form_col:
-        with st.expander("🐾 学生登录", expanded=False):
+        with st.expander("🐾 用户登录", expanded=False):
             st.caption("🔒 学号和手机号仅心理老师紧急关怀时可见，其他人不可见，聊天内容绝不存储")
             login_sid = st.text_input("学号", key="login_sid", placeholder="请输入你的学号")
             login_phone = st.text_input("手机号", key="login_phone", placeholder="请输入你的手机号")
@@ -676,7 +895,7 @@ if not st.session_state.entered:
             st.session_state.entered = True
             st.rerun()
 
-    # 老师登录入口（独立于学生登录）
+    # 老师登录入口（独立于用户登录）
     st.markdown("<div style='text-align:center; margin-top:0.8rem;'></div>", unsafe_allow_html=True)
     _, teacher_col, _ = st.columns([1, 0.5, 1])
     with teacher_col:
@@ -685,6 +904,13 @@ if not st.session_state.entered:
             st.rerun()
 
     st.stop()  # 登录页不渲染后续聊天界面
+
+# 聊天页两侧氛围装饰：fixed 贴边 + pointer-events:none 点击穿透
+st.markdown(
+    '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span></div>'
+    '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span></div>',
+    unsafe_allow_html=True,
+)
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
@@ -710,6 +936,27 @@ with st.sidebar:
 
     # 猫咪头像图片（居中展示）
     st.image(CAT_AVATAR, width=200)
+
+    # 今日猫咪语录：按日期随机轮换，同一天看到同一句（稳定感），每天换新（新鲜感）
+    _today = datetime.now().strftime("%Y%m%d")
+    _quotes = [
+        "你不需要一直坚强，偶尔脆弱也没关系，猫咪接得住你 🐾",
+        "今天也辛苦啦，不管做了多少事，你都很棒了 ✨",
+        "情绪没有对错，你感受到的，都是真实的、值得被重视的 🫂",
+        "慢慢来，比较快。允许自己按自己的节奏成长 🌱",
+        "被误解也没关系，懂你的人终会出现，猫咪一直懂你 🐱",
+        "你比想象中更勇敢，毕竟你已经走过了那么多难关 💪",
+        "休息不是偷懒，是为了走更远的路。歇歇吧 🌙",
+        "世界很吵，但在这里，你只需要做自己就好 🍃",
+    ]
+    random.seed(int(_today))
+    _today_quote = random.choice(_quotes)
+    st.markdown(
+        f'<div class="side-quote">'
+        f'<div class="quote-label">🐾 今日猫咪语录</div>'
+        f'{_today_quote}</div>',
+        unsafe_allow_html=True,
+    )
 
     # 免责声明（醒目黄色警示框，合规必备）
     st.warning(
@@ -750,6 +997,40 @@ with st.sidebar:
             "迷茫说明你在认真思考。不用一次想清楚所有事，"
             "先做一件最小的事，比如出门走走。"
         )
+
+    # 紧急求助通道：常驻侧边栏，危机时刻一键可见（与免责声明互补，更醒目）
+    st.markdown(
+        '<div class="side-emergency">'
+        '<div class="emg-title">🆘 紧急求助通道</div>'
+        '全国24小时心理援助热线<br>'
+        '<span class="emg-phone">400-161-9995</span><br>'
+        '北京心理危机研究与干预中心<br>'
+        '<span class="emg-phone">010-82951332</span><br>'
+        '生命热线（希望24）<br>'
+        '<span class="emg-phone">400-161-9995</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # 今日温柔小任务：每天一个小行动，鼓励用户迈出微小一步
+    _tasks = [
+        "给今天的自己打个分，哪怕只有 1 分也是存在过的证明",
+        "喝一杯温水，感受它流过喉咙的温度",
+        "抬头看看天空，不管是蓝天、乌云还是星星",
+        "对镜子里的自己说一句：辛苦了",
+        "深呼吸三次，吸气 4 秒，呼气 6 秒",
+        "摸一摸身边柔软的东西，感受它的触感",
+        "写下三件今天发生的小事，不分好坏",
+        "伸个懒腰，把身体绷紧再完全放松",
+    ]
+    random.seed(int(_today) + 7)
+    _today_task = random.choice(_tasks)
+    st.markdown(
+        f'<div class="side-task">'
+        f'<div class="task-label">🌱 今日温柔小任务</div>'
+        f'{_today_task}</div>',
+        unsafe_allow_html=True,
+    )
 
     # 底部清空对话按钮
     if st.button("清空情绪，重新开始", use_container_width=True):
@@ -870,11 +1151,34 @@ def pick_quick_replies():
 
 # ==================== 主页面 ====================
 
-# 主标题 + 当前对话人昵称
-st.markdown("<h1 style='text-align: center; color: #6C5B7B;'>树洞猫咪：你的专属情绪倾听者</h1>", unsafe_allow_html=True)
+# 主标题区:心理陪伴主题首屏氛围
+# (🌙 浅灰副标题 → 🐾 渐变主标题 → 浅蓝→透明极细分隔线 → 对话人 → 🌱 情绪标签)
+st.markdown(
+    "<p style='text-align: center; color: #A8A8B3; font-size: 0.85rem; "
+    "margin: 0 0 0.3rem 0; letter-spacing: 0.12em;'>🌙 无论多晚，树洞都在这里等你</p>",
+    unsafe_allow_html=True
+)
+st.markdown(
+    "<h1 style='text-align: center; margin: 0; font-weight: 700; "
+    "background: linear-gradient(90deg, #6C5B7B, #C77DA5); "
+    "-webkit-background-clip: text; background-clip: text; "
+    "-webkit-text-fill-color: transparent;'>🐾 树洞猫咪：你的专属情绪倾听者</h1>",
+    unsafe_allow_html=True
+)
+st.markdown(
+    "<div style='height: 1px; margin: 0.6rem auto 0.4rem auto; max-width: 420px; "
+    "background: linear-gradient(to right, #B8D4E3, transparent);'></div>",
+    unsafe_allow_html=True
+)
 st.markdown(
     f"<p style='text-align: center; color: #8E7CA8; font-size: 0.85rem; margin: 0.2rem 0 0 0;'>"
     f"👤 当前对话人：{st.session_state.student_name}</p>",
+    unsafe_allow_html=True
+)
+# 开场白气泡上方的淡色情绪标签(心理陪伴氛围)
+st.markdown(
+    "<p style='text-align: center; color: #9BB5A8; font-size: 0.75rem; "
+    "margin: 0.5rem 0 0.3rem 0;'>🌱 情绪安全区 | 绝对保密</p>",
     unsafe_allow_html=True
 )
 
