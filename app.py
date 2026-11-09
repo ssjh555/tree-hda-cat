@@ -543,31 +543,110 @@ with st.sidebar:
         st.session_state.entered = False
         st.rerun()
 
-# ==================== 情绪快捷按钮（省赛核心亮点） ====================
+# ==================== 情绪快捷按钮（省赛核心亮点·动态推荐版） ====================
 # 很多有情绪困扰的用户面对输入框会大脑空白，快捷按钮帮他们迈出第一步。
+# 亮点：根据用户最近一条消息的情绪标签，动态推荐最贴合当前心境的按钮。
 # 点击后直接展示预设的温暖回复（不走API，秒回+质量可控），后续对话仍走正常流程。
-QUICK_REPLIES = {
-    "😔 今天好累啊": (
-        "辛苦啦，快把身上的重担先放下来歇歇吧。"
-        "今天是不是发生了很多事？不想说也没关系哦，"
-        "猫咪就在这里，安安静静地陪着你~🐾"
-    ),
-    "🥺 突然好想哭": (
-        "那就哭出来吧，憋在心里太难受啦。"
-        "眼泪是身体在帮你排毒呢，猫咪给你递纸巾，"
-        "会一直在这里陪着你~🫂"
-    ),
-    "😶 感觉有点迷茫": (
-        "迷茫也没关系的，这说明你在成长，在思考未来的路呀。"
-        "不如先说说，最近最让你感到困惑的一件事是什么？"
-        "我们一起慢慢理一理~✨"
-    ),
-    "💭 不知道说什么": (
-        "嘿嘿，那就什么都不说也没关系呀。"
-        "我们可以在树洞里听听风声、看看云朵。"
-        "或者，猫咪给你讲个今天发生的趣事？🐱"
-    ),
-}
+QUICK_REPLIES = [
+    # --- 情绪匹配型按钮（emotions 非空，命中用户情绪时优先展示） ---
+    {"label": "😔 今天好累啊", "emotions": ["疲惫", "无力", "低落"],
+     "reply": (
+         "辛苦啦，快把身上的重担先放下来歇歇吧。"
+         "今天是不是发生了很多事？不想说也没关系哦，"
+         "猫咪就在这里，安安静静地陪着你~🐾")},
+    {"label": "🥺 突然好想哭", "emotions": ["难过", "伤心", "悲伤", "失落"],
+     "reply": (
+         "那就哭出来吧，憋在心里太难受啦。"
+         "眼泪是身体在帮你排毒呢，猫咪给你递纸巾，"
+         "会一直在这里陪着你~🫂")},
+    {"label": "😰 好焦虑好紧张", "emotions": ["焦虑", "紧张", "担忧", "害怕", "恐惧", "压力"],
+     "reply": (
+         "先慢慢深呼吸一下，吸气~呼气~猫咪陪着你呢。"
+         "焦虑是因为你在乎这件事呀，这很正常。"
+         "愿意跟猫咪说说，是什么事让你这么紧张吗？我们可以一起想办法~")},
+    {"label": "😠 好烦好气啊", "emotions": ["愤怒", "生气", "烦躁", "不满"],
+     "reply": (
+         "气坏了吧！来来来，猫咪让你揉揉尾巴出出气~"
+         "生气说明有人踩到了你的底线，你的感受完全合理。"
+         "先喝口水冷静一下，然后跟猫咪说说谁惹你啦？")},
+    {"label": "🥺 我觉得好委屈", "emotions": ["委屈", "无奈"],
+     "reply": (
+         "抱抱你，受了委屈心里最堵了。"
+         "你一定很难受吧，明明不是你的错却要自己扛。"
+         "猫咪全都看在眼里呢，慢慢说，我认真听着~🫂")},
+    {"label": "😶 感觉有点迷茫", "emotions": ["迷茫"],
+     "reply": (
+         "迷茫也没关系的，这说明你在成长，在思考未来的路呀。"
+         "不如先说说，最近最让你感到困惑的一件事是什么？"
+         "我们一起慢慢理一理~✨")},
+    {"label": "💔 感觉没人懂我", "emotions": ["孤独"],
+     "reply": (
+         "那种周围很吵、心里却很空的感觉，真的很不好受。"
+         "但是你看，你现在说出来了，猫咪就懂你呀。"
+         "你不需要讨好所有人，在这里做真实的自己就好~")},
+    {"label": "😞 对自己好失望", "emotions": ["愧疚", "自责"],
+     "reply": (
+         "别对自己这么严厉嘛，你已经很努力了呀。"
+         "换做是朋友遇到同样的事，你会怪他吗？肯定不会吧。"
+         "那就也对自己温柔一点，跟猫咪说说发生了什么？")},
+    # --- 通用型按钮（emotions 为空，作为默认/补充展示） ---
+    {"label": "😴 晚上睡不着", "emotions": [],
+     "reply": (
+         "睡不着的时候脑子总是转个不停对不对？"
+         "试试把烦心事都交给猫咪保管，今晚你只负责休息。"
+         "猫咪给你唱摇篮曲，轻轻地~喵~喵~🌙")},
+    {"label": "📚 考试压力好大", "emotions": [],
+     "reply": (
+         "备考的日子真的好熬人，心疼你呀。"
+         "不过你知道吗，能坚持到现在的你已经超棒了！"
+         "累了就歇会儿，猫咪陪你制定一个小小的复习计划好不好？")},
+    {"label": "💭 不知道说什么", "emotions": [],
+     "reply": (
+         "嘿嘿，那就什么都不说也没关系呀。"
+         "我们可以在树洞里听听风声、看看云朵。"
+         "或者，猫咪给你讲个今天发生的趣事？🐱")},
+]
+
+# 始终展示的兜底按钮（无论什么情绪都保留）
+_ALWAYS_SHOW = "💭 不知道说什么"
+# 每次最多展示的按钮数
+_QUICK_BTN_COUNT = 4
+
+
+def pick_quick_replies():
+    """根据用户最近一条消息的情绪，动态挑选最合适的快捷按钮
+
+    逻辑：
+      1. 找到最近一条用户消息的情绪标签
+      2. 优先展示匹配该情绪的按钮（最多3个）
+      3. "不知道说什么"始终保留
+      4. 不足4个时按顺序从通用按钮补齐
+    """
+    # 找最近一条用户消息的情绪
+    last_emotion = ""
+    for msg in reversed(st.session_state.messages):
+        if msg["role"] == "user" and msg.get("emotion"):
+            last_emotion = msg["emotion"]
+            break
+    # 匹配当前情绪的按钮优先
+    matched = [q for q in QUICK_REPLIES if last_emotion in q["emotions"]]
+    # 通用按钮（兜底）
+    general = [q for q in QUICK_REPLIES if not q["emotions"]]
+    # 组装：匹配的 + 始终展示的 + 通用补齐 + 全库兜底
+    picked = matched[:_QUICK_BTN_COUNT - 1]  # 留1个位置给兜底按钮
+    always = next(q for q in QUICK_REPLIES if q["label"] == _ALWAYS_SHOW)
+    if always not in picked:
+        picked.append(always)
+    # 不足则从通用按钮补齐，仍不足则从全库补齐（保证始终有4个按钮）
+    for pool in (general, QUICK_REPLIES):
+        for q in pool:
+            if len(picked) >= _QUICK_BTN_COUNT:
+                break
+            if q not in picked:
+                picked.append(q)
+        if len(picked) >= _QUICK_BTN_COUNT:
+            break
+    return picked[:_QUICK_BTN_COUNT]
 
 # ==================== 主页面 ====================
 
@@ -595,15 +674,21 @@ for message in st.session_state.messages:
             )
         st.markdown(message["content"])
 
-# 情绪快捷按钮行：放在输入框正上方，帮用户迈出第一步
-st.markdown("<p style='text-align:center; color:#A89BB8; font-size:0.8rem; margin:0.3rem 0 0.2rem;'>不知道说什么？点一下就好~</p>", unsafe_allow_html=True)
-quick_cols = st.columns(len(QUICK_REPLIES))
-for col, (btn_label, btn_reply) in zip(quick_cols, QUICK_REPLIES.items()):
+# 情绪快捷按钮行：放在输入框正上方，根据用户当前心境动态推荐
+picked_quick = pick_quick_replies()
+if last_emotion_hint := next((m.get("emotion", "") for m in reversed(st.session_state.messages) if m["role"] == "user" and m.get("emotion")), ""):
+    hint_text = f"猫咪感觉到你有些{last_emotion_hint}，也许这些能帮到你~"
+else:
+    hint_text = "不知道说什么？点一下就好~"
+st.markdown(f"<p style='text-align:center; color:#A89BB8; font-size:0.8rem; margin:0.3rem 0 0.2rem;'>{hint_text}</p>", unsafe_allow_html=True)
+quick_cols = st.columns(len(picked_quick))
+for col, q in zip(quick_cols, picked_quick):
     with col:
-        if st.button(btn_label, use_container_width=True, key=f"quick_{btn_label}"):
-            # 点击快捷按钮：把文案作为用户消息、预设回复作为猫咪消息加入历史
-            st.session_state.messages.append({"role": "user", "content": btn_label, "emotion": ""})
-            st.session_state.messages.append({"role": "assistant", "content": btn_reply})
+        if st.button(q["label"], use_container_width=True, key=f"quick_{q['label']}"):
+            # 点击快捷按钮：把文案作为用户消息（带情绪标签，供下轮动态推荐）、预设回复作为猫咪消息
+            btn_emotion = q["emotions"][0] if q["emotions"] else ""
+            st.session_state.messages.append({"role": "user", "content": q["label"], "emotion": btn_emotion})
+            st.session_state.messages.append({"role": "assistant", "content": q["reply"]})
             st.rerun()
 
 # 接收用户输入
