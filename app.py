@@ -5,7 +5,6 @@ import json
 import uuid
 import random
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 # ============ 自动启动器：直接 python app.py 即可拉起 Streamlit ============
 if __name__ == "__main__":
@@ -297,11 +296,11 @@ def llm_confirm_crisis(text):
             messages=[
                 {
                     "role": "system",
+                    # 提速：精简指令减少输入token，max_tokens=2保证秒回
                     "content": (
-                        "你是危机干预判断助手。请结合上下文语境，判断用户的话语"
-                        "是否表达了真实的伤害自己或结束生命的意图。"
-                        "特别注意识别网络热词（如emo、玉玉）、拼音缩写（如zs、414）"
-                        "以及谐音梗（如紫砂）。如果存在真实意图，请只回复'是'，否则回复'否'。"
+                        "判断用户话语是否表达真实自伤/自杀意图"
+                        "（注意识别emo、玉玉、zs、紫砂等网络用法）。"
+                        "有真实意图只回复'是'，否则回复'否'。"
                     ),
                 },
                 {"role": "user", "content": text},
@@ -904,6 +903,11 @@ for message in st.session_state.messages:
 if st.session_state.get("contact_submitted"):
     st.success("💌 已经收到啦，老师会尽快联系你。猫咪一直在这里陪着你~🐾")
 elif st.session_state.get("crisis_active"):
+    # 刚触发高危预警时，在表单上方显示红色警示条（仅本次显示，避免重复刷屏）
+    if st.session_state.get("crisis_just_triggered"):
+        st.error("🚨 触发高危预警！已强制中断对话，并通知辅导员。")
+        st.error("请立刻拨打 24 小时心理援助热线：400-161-9995")
+        st.session_state.crisis_just_triggered = False
     with st.container(border=True):
         st.markdown("💌 **如果你愿意，可以让老师联系你**（完全自愿，随时可以拒绝）")
         contact = st.text_input("联系方式（手机号 / QQ / 微信均可）", key="crisis_contact_input")
@@ -945,12 +949,21 @@ else:
 
 # 接收用户输入
 if prompt := st.chat_input("跟我说点什么吧..."):
-    # 提速：风控检测与情绪识别并行执行（原本串行要等2次API，现在同时跑省约1-2秒）
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        level_future = executor.submit(detect_crisis_level, prompt)
-        emotion_future = executor.submit(detect_emotion, prompt)
-        level = level_future.result()
-        is_crisis = level == 2 or (level == 1 and llm_confirm_crisis(prompt))
+    # 提速：风控与情绪检测均已本地化（纯内存关键词匹配，微秒级），
+    # 无需线程池并行，直接顺序调用，省掉线程创建与调度开销
+    level = detect_crisis_level(prompt)
+    emotion = detect_emotion(prompt)
+
+    # 三级快速分流（核心提速逻辑，确保大模型复核只在必要时触发）：
+    #   level==2 高危词直接命中 → 立即拦截，绝不调大模型
+    #   level==1 歧义词命中     → 唯一需要调大模型复核的场景
+    #   level==0 无敏感词       → 直接进入聊天，零额外API调用
+    if level == 2:
+        is_crisis = True
+    elif level == 1:
+        is_crisis = llm_confirm_crisis(prompt)
+    else:
+        is_crisis = False
     if is_crisis:
         # 【脱敏预警简报】提取触发词，只记录时间/触发词/学号/风险等级，不含聊天原文（数据隔离）
         cleaned_log = prompt
@@ -980,22 +993,16 @@ if prompt := st.chat_input("跟我说点什么吧..."):
             "contact_left": False,
         })
 
-        with st.chat_message("user", avatar=USER_AVATAR):
-            st.markdown(prompt)
+        # 消息入历史（rerun 后由聊天历史循环统一渲染，无需在此重复渲染）
         st.session_state.messages.append({"role": "user", "content": prompt, "emotion": ""})
-        with st.chat_message("assistant", avatar=CAT_AVATAR):
-            st.error("🚨 触发高危预警！已强制中断对话，并通知辅导员。")
-            st.error("请立刻拨打 24 小时心理援助热线：400-161-9995")
-            st.markdown(CRISIS_REPLY)
         st.session_state.messages.append({"role": "assistant", "content": CRISIS_REPLY})
         st.session_state.crisis_active = True  # 标记危机状态，主页面据此显示自愿联系表单
-        st.stop()
+        st.session_state.crisis_just_triggered = True  # 标记刚触发，供表单区显示红色警示条
+        st.rerun()  # 立即重跑：联系表单当场弹出，无需等下一次交互
 
     # 未命中：重置危机状态，恢复正常聊天
     st.session_state.crisis_active = False
     st.session_state.contact_submitted = False
-    # 从并行任务中拿情绪识别结果（此时大概率已完成，无需再等）
-    emotion = emotion_future.result()
     with st.chat_message("user", avatar=USER_AVATAR):
         if emotion:
             emoji = EMOTION_EMOJI.get(emotion, "💭")
