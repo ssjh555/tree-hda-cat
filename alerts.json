@@ -1,0 +1,26 @@
+[
+  {
+    "session_id": "3a9cb447",
+    "nickname": "云橘猫",
+    "time": "2026-11-09 20:05:26",
+    "risk_level": "高危",
+    "trigger_word": "想死",
+    "contact_left": false
+  },
+  {
+    "session_id": "246fa612",
+    "nickname": "星星云朵",
+    "time": "2026-11-09 20:38:54",
+    "risk_level": "高危",
+    "trigger_word": "想死",
+    "contact_left": false
+  },
+  {
+    "session_id": "4d1531d6",
+    "nickname": "月亮糯米",
+    "time": "2026-11-09 20:43:53",
+    "risk_level": "高危",
+    "trigger_word": "毕业了",
+    "contact_left": false
+  }
+]

@@ -166,12 +166,12 @@ CRISIS_REPLY = (
     "猫咪哪儿也不去，就在这里守着你。🐾"
 )
 
-# 猫咪开场白（首句含 AI 免责声明，合规必备）
+# 猫咪开场白（首句温和引导"慢慢说，我在听"，含 AI 免责声明，合规必备）
 GREETING = (
-    "喵～你来啦！🐾 猫咪一直在这里等你呢，好开心呀~\n\n"
+    "你好呀，慢慢说，我在听🐱\n\n"
     "（小声说：猫咪是 AI 小助手，可以陪你聊天，但不能替代专业心理咨询哦~）\n\n"
-    "今天心情怎么样呀？开心的、难过的、委屈的、迷茫的……什么都可以说给猫咪听。"
-    "猫咪会用最软最软的毛茸茸蹭蹭你，一直一直陪着你哦。"
+    "今天心情怎么样？开心的、难过的、委屈的、迷茫的……什么都可以说给猫咪听，"
+    "猫咪会用最软最软的毛茸茸蹭蹭你，一直一直陪着你哦。🐾"
 )
 
 # 猫咪头像路径（本地方形头像）
@@ -369,9 +369,12 @@ def update_alert_contact(session_id, contact, student_id=None, student_phone=Non
 # ==================== 自定义 CSS：治愈系树洞风格 ====================
 st.markdown("""
 <style>
-/* 整体背景：浅米色到淡薄荷绿柔和渐变，极简治愈系（兼容新版 Streamlit 多层容器） */
+/* 整体背景：浅米色到淡薄荷绿柔和渐变 + 极淡纸纹纹理，极简治愈系（兼容新版 Streamlit 多层容器） */
 .stApp, [data-testid="stMain"], [data-testid="stAppViewContainer"] {
-    background: linear-gradient(135deg, #F7F2EA 0%, #E8F5EE 100%) !important;
+    background:
+        repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(120, 100, 80, 0.012) 3px, rgba(120, 100, 80, 0.012) 4px),
+        repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(120, 100, 80, 0.010) 3px, rgba(120, 100, 80, 0.010) 4px),
+        linear-gradient(135deg, #F7F2EA 0%, #E8F5EE 100%) !important;
     font-family: 'Quicksand', 'Comic Sans MS', '楷体', 'Microsoft YaHei', sans-serif;
 }
 
@@ -499,10 +502,10 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     justify-content: center;
     text-align: center;
 }
-/* 封面主标题：暖紫→柔粉渐变文字 */
+/* 封面主标题：暖紫→柔粉渐变文字（加粗放大，视觉焦点） */
 .cover-title {
-    font-size: 2.8rem;
-    font-weight: 700;
+    font-size: 3.1rem;
+    font-weight: 800;
     background: linear-gradient(90deg, #6C5B7B, #C77DA5);
     -webkit-background-clip: text;
     background-clip: text;
@@ -510,12 +513,13 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     margin: 0;
     letter-spacing: 3px;
 }
-/* 封面极细渐变横线：浅蓝→透明 */
+/* 封面极细渐变横线：细虚线，柔和过渡 */
 .cover-hairline {
-    height: 1px;
+    height: 0;
     width: 280px;
     margin: 0.8rem auto 0.5rem auto;
-    background: linear-gradient(to right, #B8D4E3, transparent);
+    border-top: 1px dashed #C9B8D9;
+    opacity: 0.7;
 }
 /* 封面情绪安全区标签（🌱 淡绿小字） */
 .cover-safe-tag {
@@ -523,18 +527,22 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     color: #9BB5A8;
     margin: 0.5rem 0 0 0;
 }
-/* 封面副标题 */
+/* 封面副标题（柔和细体） */
 .cover-subtitle {
     font-size: 1.25rem;
+    font-weight: 400;
     color: #8E7CA8;
     margin: 0.6rem 0 0 0;
+    letter-spacing: 0.08em;
 }
-/* 封面描述文字 */
+/* 封面描述文字（细体 + 大行间距，读起来更放松） */
 .cover-desc {
     font-size: 0.95rem;
+    font-weight: 300;
     color: #A89BB8;
     margin-top: 1rem;
-    line-height: 1.9;
+    line-height: 2.1;
+    letter-spacing: 0.03em;
 }
 /* 封面猫爪装饰行：缓慢呼吸动画，营造生命感 */
 .cover-paws {
@@ -595,10 +603,10 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     animation: cover-floaty 4s ease-in-out infinite;
     opacity: 0.55;
 }
-.cover-float span:nth-child(1) { left: 12%; top: -180px; animation-delay: 0s; }
-.cover-float span:nth-child(2) { left: 82%; top: -160px; animation-delay: 1.2s; }
-.cover-float span:nth-child(3) { left: 25%; top: -120px; animation-delay: 2.1s; font-size: 0.8rem; }
-.cover-float span:nth-child(4) { left: 70%; top: -200px; animation-delay: 0.6s; font-size: 0.85rem; }
+.cover-float span:nth-child(1) { left: 15%;  top: -180px; animation-delay: 0s; }
+.cover-float span:nth-child(2) { right: 15%; top: -180px; animation-delay: 1.2s; }
+.cover-float span:nth-child(3) { left: 30%;  top: -120px; animation-delay: 2.1s; font-size: 0.8rem; }
+.cover-float span:nth-child(4) { right: 30%; top: -120px; animation-delay: 0.6s; font-size: 0.85rem; }
 @keyframes cover-floaty {
     0%, 100% { transform: translateY(0); opacity: 0.4; }
     50% { transform: translateY(-8px); opacity: 0.75; }
@@ -622,11 +630,11 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     border-radius: 24px;
     border: 3px solid rgba(255, 255, 255, 0.85);
     box-shadow: 0 8px 28px rgba(199, 125, 165, 0.28), 0 2px 8px rgba(108, 91, 123, 0.12);
-    animation: cover-avatar-breathe 3.5s ease-in-out infinite;
+    animation: cover-avatar-breathe 5s ease-in-out infinite;
 }
 @keyframes cover-avatar-breathe {
     0%, 100% { transform: scale(1); box-shadow: 0 8px 28px rgba(199, 125, 165, 0.28), 0 2px 8px rgba(108, 91, 123, 0.12); }
-    50% { transform: scale(1.03); box-shadow: 0 12px 36px rgba(199, 125, 165, 0.42), 0 2px 8px rgba(108, 91, 123, 0.12); }
+    50% { transform: scale(1.04); box-shadow: 0 12px 34px rgba(199, 125, 165, 0.38), 0 2px 8px rgba(108, 91, 123, 0.12); }
 }
 
 /* ==================== 情绪快捷按钮样式 ==================== */
@@ -649,6 +657,26 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     box-shadow: 0 3px 8px rgba(108, 91, 123, 0.15);
 }
 
+/* ===== 封面页按钮主次区分 ===== */
+/* 主按钮（我只是随便看看）：浅暖底色，视觉突出，引导新访客先体验 */
+.stMainBlockContainer [data-testid="stButton"] > button[kind="primary"],
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button[kind="primary"] {
+    background: linear-gradient(135deg, #FFE8D6, #FFDBC5) !important;
+    color: #9C6B4A !important;
+    border: none !important;
+    border-radius: 25px !important;
+    font-size: 1.02rem !important;
+    font-weight: 700 !important;
+    padding: 0.55rem 1.4rem !important;
+    box-shadow: 0 4px 14px rgba(224, 166, 122, 0.35) !important;
+    transition: all 0.25s ease !important;
+}
+.stMainBlockContainer [data-testid="stButton"] > button[kind="primary"]:hover,
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #FFDCC4, #FFCEAC) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 18px rgba(224, 166, 122, 0.45) !important;
+}
 /* 侧边栏按钮不受快捷按钮样式影响，保持 Streamlit 默认风格 */
 section[data-testid="stSidebar"] [data-testid="stButton"] > button {
     background-color: transparent !important;
@@ -662,38 +690,161 @@ section[data-testid="stSidebar"] [data-testid="stButton"] > button {
 /* ===== 两侧固定治愈装饰：贴边 fixed + 点击穿透 + 半透明，不随页面滚动 ===== */
 .chat-deco {
     position: fixed;        /* 固定在浏览器左右边缘，不随页面滚动 */
-    display: flex;
-    flex-direction: column; /* 竖排排列 */
-    gap: 1.5rem;
-    font-size: 1.3rem;
+    font-size: 1.6rem;      /* 增大装饰尺寸，让两侧不显空旷 */
     pointer-events: none;   /* 极其重要：点击/滚动完全穿透，不阻挡任何交互 */
     z-index: 0;             /* -1 会被 .stApp 不透明背景遮挡不可见；0 + pointer-events:none 同样保证不挡操作 */
     user-select: none;
-    opacity: 0.2;           /* 若隐若现，不遮挡文字 */
+    opacity: 0.3;           /* 适度可见，若隐若现但不遮挡文字 */
+    top: 0;
+    height: 100vh;
+    width: 3rem;
 }
-/* 左侧边缘靠下：🌿 🐾 竖排 */
+/* 左侧边缘：沿整条侧边均匀分布 */
 .chat-deco-left {
-    left: 1.6rem;
-    bottom: 10vh;
+    left: 1.4rem;
 }
-/* 右侧边缘靠上：🌙 ✨ 竖排 */
+/* 右侧边缘：沿整条侧边均匀分布 */
 .chat-deco-right {
-    right: 1.6rem;
-    top: 10vh;
+    right: 1.4rem;
 }
+/* 每个emoji绝对定位，从上到下均匀铺满侧边 */
+.chat-deco span {
+    position: absolute;
+    left: 50%;
+    translate: -50% 0;
+    animation: chat-deco-float 6s ease-in-out infinite;
+}
+.chat-deco span:nth-child(1) { top: 15%; }
+.chat-deco span:nth-child(2) { top: 38%; animation-delay: 1.5s; }
+.chat-deco span:nth-child(3) { top: 62%; animation-delay: 3s; }
+.chat-deco span:nth-child(4) { top: 85%; animation-delay: 4.5s; }
 /* 轻柔漂浮动画 */
 @keyframes chat-deco-float {
-    0%, 100% { translate: 0 0; }
-    50% { translate: 0 -8px; }
+    0%, 100% { translate: -50% 0; }
+    50% { translate: -50% -8px; }
 }
-.chat-deco span { animation: chat-deco-float 6s ease-in-out infinite; }
-.chat-deco span:nth-child(2) { animation-delay: 1.5s; }
 /* 窄屏隐藏，避免遮挡内容 */
 @media (max-width: 1000px) {
     .chat-deco { display: none; }
 }
 </style>
 """, unsafe_allow_html=True)
+
+# ==================== 深夜模式样式（深夜倾诉场景：深紫夜空渐变，护眼柔和） ====================
+# 切换逻辑：侧边栏 st.toggle 控制，开启时注入本样式块覆盖浅色主题
+_DARK_MODE_CSS = """
+<style>
+/* 深夜模式：深紫夜空渐变背景 + 极淡纸纹 */
+.stApp, [data-testid="stMain"], [data-testid="stAppViewContainer"] {
+    background:
+        repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.012) 3px, rgba(255,255,255,0.012) 4px),
+        linear-gradient(135deg, #1A1626 0%, #232038 100%) !important;
+    color: #D8D0E8 !important;
+}
+/* 侧边栏深色 */
+section[data-testid="stSidebar"], [data-testid="stSidebar"] {
+    background-color: #1E1B2E !important;
+    color: #C8C0D8 !important;
+}
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] label {
+    color: #C8C0D8 !important;
+}
+/* 聊天气泡深色 */
+[data-testid="stChatMessage"] {
+    background-color: #2A2640 !important;
+    color: #D8D0E8 !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+    background-color: #2E3A50 !important;
+}
+/* 侧边栏卡片深色 */
+.side-quote { background: linear-gradient(135deg, #2E2840, #352E48) !important; color: #C8B8D8 !important; border-left-color: #9B6FAE !important; }
+.side-quote .quote-label { color: #B89BC8 !important; }
+.side-emergency { background: linear-gradient(135deg, #3A2A2A, #443030) !important; color: #D8B8B0 !important; border-left-color: #C07856 !important; }
+.side-emergency .emg-phone { color: #E89070 !important; }
+.side-task { background: linear-gradient(135deg, #2A3A30, #304438) !important; color: #B8D0C0 !important; border-left-color: #6BAF7A !important; }
+.side-task .task-label { color: #90C0A0 !important; }
+/* 封面两侧卡片深色 + hover提亮 */
+.cover-side-left .cover-side-card {
+    background: linear-gradient(135deg, rgba(42,58,48,0.9), rgba(48,68,56,0.8)) !important;
+    border-color: rgba(90,140,105,0.4) !important;
+    color: #A8C8B0 !important;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.2) !important;
+}
+.cover-side-left .cover-side-card:hover {
+    background: linear-gradient(135deg, rgba(52,70,58,0.95), rgba(58,78,66,0.88)) !important;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3) !important;
+    transform: translateY(-3px) !important;
+}
+.cover-side-right .cover-side-card {
+    background: linear-gradient(135deg, rgba(46,40,64,0.9), rgba(53,46,72,0.8)) !important;
+    border-color: rgba(120,100,150,0.4) !important;
+    color: #B8A8D0 !important;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.2) !important;
+}
+.cover-side-right .cover-side-card:hover {
+    background: linear-gradient(135deg, rgba(56,50,76,0.95), rgba(63,56,84,0.88)) !important;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3) !important;
+    transform: translateY(-3px) !important;
+}
+/* 底部风险提醒条深色 */
+.cover-notice {
+    background: rgba(46,42,66,0.7) !important;
+    color: #A898C0 !important;
+}
+/* 快捷按钮深色（非primary：线条次要风格） */
+.stMainBlockContainer [data-testid="stButton"] > button:not([kind="primary"]),
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button:not([kind="primary"]) {
+    background: transparent !important;
+    color: #A898C0 !important;
+    border: 1px solid #4A4060 !important;
+}
+.stMainBlockContainer [data-testid="stButton"] > button:not([kind="primary"]):hover,
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button:not([kind="primary"]):hover {
+    background: rgba(74, 64, 96, 0.3) !important;
+    border-color: #6A5A80 !important;
+}
+/* 主按钮（primary）深夜：深暖底色突出 */
+.stMainBlockContainer [data-testid="stButton"] > button[kind="primary"],
+[data-testid="stAppViewBlockContainer"] [data-testid="stButton"] > button[kind="primary"] {
+    background: linear-gradient(135deg, #5A4038, #6A4A40) !important;
+    color: #F0D8C0 !important;
+    border: none !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3) !important;
+}
+/* 聊天输入框深色 */
+[data-testid="stChatInput"] { background-color: #2A2640 !important; }
+[data-testid="stChatInput"] textarea { color: #D8D0E8 !important; }
+/* 主内容区默认文字 */
+.stMainBlockContainer, [data-testid="stAppViewBlockContainer"] {
+    color: #D8D0E8 !important;
+}
+.stMainBlockContainer label, [data-testid="stAppViewBlockContainer"] label {
+    color: #B8B0C8 !important;
+}
+/* expander 深色（主入口：深暖底色） */
+[data-testid="stExpander"] {
+    background: linear-gradient(135deg, #4A3830, #55403A) !important;
+    border: none !important;
+    color: #E8D0B8 !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25) !important;
+}
+[data-testid="stExpander"] summary {
+    color: #E8C8A8 !important;
+}
+[data-testid="stExpander"] summary svg {
+    color: #E8C8A8 !important;
+}
+/* Streamlit 内置提示框（warning/info/success）深色 */
+[data-testid="stAlert"] {
+    background-color: #2E2A42 !important;
+    color: #C8C0D8 !important;
+}
+</style>
+"""
 
 # ==================== 无感授权与数据隔离：状态初始化 ====================
 # 模拟校园网静默授权：无需登录界面，系统自动获取学生信息
@@ -819,40 +970,149 @@ if "entered" not in st.session_state:
     st.session_state.entered = False
 
 if not st.session_state.entered:
-    # 登录页隐藏侧边栏与聊天输入框
+    # 登录页隐藏侧边栏与聊天输入框 + 封面内容垂直居中（消除下方大片留白）
     st.markdown("""
     <style>
     section[data-testid="stSidebar"] {display: none !important;}
     [data-testid="stChatInput"] {display: none !important;}
+    [data-testid="stBlockContainer"], [data-testid="stAppViewBlockContainer"],
+    .block-container, .main .block-container {
+        min-height: 88vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+    /* 封面主入口（用户登录 expander）：浅暖底色主视觉，引导用户填写信息进入 */
+    [data-testid="stExpander"] {
+        border: none !important;
+        border-radius: 25px !important;
+        background: linear-gradient(135deg, #FFE8D6, #FFDBC5) !important;
+        box-shadow: 0 4px 14px rgba(224, 166, 122, 0.35) !important;
+    }
+    [data-testid="stExpander"] summary {
+        color: #9C6B4A !important;
+        font-weight: 700 !important;
+        font-size: 1.02rem !important;
+    }
+    [data-testid="stExpander"] summary svg {
+        color: #9C6B4A !important;
+    }
+    /* 封面次要按钮（随便看看/老师入口）：线条风格，弱化视觉权重 */
+    [data-testid="stButton"] > button:not([kind="primary"]) {
+        background: transparent !important;
+        color: #8E7CA8 !important;
+        border: 1.5px solid #D4C5E0 !important;
+        border-radius: 25px !important;
+        font-size: 0.92rem !important;
+        font-weight: 500 !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stButton"] > button:not([kind="primary"]):hover {
+        background: rgba(212, 197, 224, 0.15) !important;
+        border-color: #B89FD0 !important;
+        color: #7A6795 !important;
+    }
+    /* 封面两侧内容卡片：贴合树洞主题，轻透舒适，左右上下两两对齐 */
+    .cover-side {
+        position: fixed;
+        top: 0;
+        height: 100vh;
+        width: 190px;
+        z-index: 0;
+    }
+    .cover-side-left { left: 5.5rem; }
+    .cover-side-right { right: 5.5rem; }
+    .cover-side-card {
+        position: absolute;
+        left: 0;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.9rem 1rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 400;
+        line-height: 1.9;
+        letter-spacing: 0.03em;
+        backdrop-filter: blur(6px);
+        text-align: center;
+        transition: background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+    }
+    /* 上下两两对齐：左右两侧卡片在同一高度 */
+    .cover-side-card:nth-child(1) { top: 30%; }
+    .cover-side-card:nth-child(2) { top: 52%; }
+    .cover-side-card .side-card-icon {
+        font-size: 1.2rem;
+        display: block;
+        margin-bottom: 0.4rem;
+    }
+    /* 左侧：自然成长浅绿系 + hover提亮上浮 */
+    .cover-side-left .cover-side-card {
+        background: linear-gradient(135deg, rgba(228,242,232,0.72), rgba(235,247,238,0.55));
+        border: 1px solid rgba(185,218,195,0.45);
+        color: #7A9E84;
+        box-shadow: 0 2px 10px rgba(140,180,155,0.1);
+    }
+    .cover-side-left .cover-side-card:hover {
+        background: linear-gradient(135deg, rgba(228,242,232,0.88), rgba(235,247,238,0.72));
+        box-shadow: 0 6px 20px rgba(140,180,155,0.2);
+        transform: translateY(-3px);
+    }
+    /* 右侧：夜空梦幻浅紫系 + hover提亮上浮 */
+    .cover-side-right .cover-side-card {
+        background: linear-gradient(135deg, rgba(238,232,248,0.72), rgba(243,235,250,0.55));
+        border: 1px solid rgba(205,190,230,0.45);
+        color: #9788B0;
+        box-shadow: 0 2px 10px rgba(160,140,190,0.1);
+    }
+    .cover-side-right .cover-side-card:hover {
+        background: linear-gradient(135deg, rgba(238,232,248,0.88), rgba(243,235,250,0.72));
+        box-shadow: 0 6px 20px rgba(160,140,190,0.2);
+        transform: translateY(-3px);
+    }
+    /* 窄屏隐藏两侧卡片 */
+    @media (max-width: 1280px) {
+        .cover-side { display: none !important; }
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    # 首页两侧固定装饰：fixed 贴边 + pointer-events:none 点击穿透，不随页面滚动
+    # 首页两侧装饰：最外缘emoji漂浮 + 内侧内容卡片，左右错开互不冲突
+    # emoji贴最外边（1.4rem），卡片往内移（5.5rem），chat-deco仅封面页渲染
     st.markdown(
-        '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span></div>'
-        '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span></div>',
+        '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span><span>🌱</span><span>🍃</span><span>☘️</span><span>🍂</span></div>'
+        '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span><span>⭐</span><span>☁️</span><span>💫</span><span>🌟</span></div>',
         unsafe_allow_html=True,
     )
 
     # 登录页欢迎语（紧凑居中 + 装饰点缀）
     st.markdown("""
+    <div class="cover-side cover-side-left">
+        <div class="cover-side-card"><span class="side-card-icon">�</span>心事说进树洞，猫咪帮你藏好</div>
+        <div class="cover-side-card"><span class="side-card-icon">�</span>树洞里长出新芽，像你一样温柔生长</div>
+    </div>
+    <div class="cover-side cover-side-right">
+        <div class="cover-side-card"><span class="side-card-icon">🌙</span>深夜的树洞，亮着一盏等你的微光</div>
+        <div class="cover-side-card"><span class="side-card-icon">�</span>树洞口的猫咪，毛茸茸随时准备好</div>
+    </div>
     <div class="cover-float"><span>✨</span><span>🌙</span><span>☁️</span><span>⭐</span></div>
     <div class="cover-container">
         <div class="cover-paws">🐾 🐱 🐾</div>
         <h1 class="cover-title">🐾 树洞猫咪</h1>
-        <p class="cover-subtitle">你的专属情绪倾听者</p>
+        <p class="cover-subtitle">你的校园情绪树洞</p>
         <div class="cover-hairline"></div>
-        <p class="cover-safe-tag">🌱 情绪安全区 | 绝对保密</p>
+        <p class="cover-safe-tag">🛡 情绪安全区 | 全程保密</p>
         <p class="cover-desc">
             在这里，你可以卸下所有伪装。<br>
-            没有评判，没有说教，只有一只温柔的猫咪愿意听你说话。
+            没有评判，没有说教，小猫安静倾听你的心事。
         </p>
         <div class="cover-features">
-            <div class="cover-feature">🔒 匿名安全</div>
+            <div class="cover-feature">✨ 匿名安全</div>
             <div class="cover-feature">🐾 温柔陪伴</div>
-            <div class="cover-feature">💬 绝不存储</div>
+            <div class="cover-feature">� 内容不留存</div>
         </div>
-        <p class="cover-quote">"每只小猫都值得被这个世界温柔以待 🐾"</p>
+        <p class="cover-quote">"愿每一份心事，都能被温柔接住"</p>
     </div>
     <div class="cover-divider"><span class="line"></span><span class="dot">🐾</span><span class="line"></span></div>
     """, unsafe_allow_html=True)
@@ -867,14 +1127,14 @@ if not st.session_state.entered:
         unsafe_allow_html=True,
     )
 
-    # 用户登录表单（学号 + 手机号必填，仅心理老师可见）
+    # 主入口：用户登录（浅暖底色突出，学号+手机号必填，仅心理老师可见）
     _, form_col, _ = st.columns([1, 1.2, 1])
     with form_col:
         with st.expander("🐾 用户登录", expanded=False):
             st.caption("🔒 学号和手机号仅心理老师紧急关怀时可见，其他人不可见，聊天内容绝不存储")
             login_sid = st.text_input("学号", key="login_sid", placeholder="请输入你的学号")
             login_phone = st.text_input("手机号", key="login_phone", placeholder="请输入你的手机号")
-            if st.button("🐾 进入树洞", use_container_width=True):
+            if st.button("🐾 进入树洞", use_container_width=True, type="primary"):
                 if login_sid.strip() and login_phone.strip():
                     st.session_state.student_id = login_sid.strip()
                     st.session_state.student_phone = login_phone.strip()
@@ -885,7 +1145,7 @@ if not st.session_state.entered:
 
     st.markdown('<p style="text-align:center;color:#C4B5D9;font-size:0.78rem;margin:0.3rem 0;">— 或者 —</p>', unsafe_allow_html=True)
 
-    # 旁观者入口：无需填写信息，直接进入主页体验
+    # 次要入口：旁观者（线条按钮风格，无需填写信息，直接体验）
     _, obs_col, _ = st.columns([1, 1.2, 1])
     with obs_col:
         if st.button("👀 我只是随便看看", use_container_width=True, help="无需填写信息，直接进入体验"):
@@ -903,17 +1163,32 @@ if not st.session_state.entered:
             st.query_params["view"] = "teacher"
             st.rerun()
 
+    # 底部风险提醒（合规必备：浅底色条，温和不突兀但不被忽略）
+    st.markdown(
+        '<p class="cover-notice" style="text-align:center;color:#9A8EB0;font-size:0.7rem;margin:1.4rem auto 0 auto;'
+        'letter-spacing:0.03em;padding:0.45rem 1rem;border-radius:14px;'
+        'background:rgba(230,222,240,0.55);max-width:520px;">'
+        '💡 提示：本产品仅为情绪陪伴，如你正承受严重心理痛苦，'
+        '请联系专业心理援助热线 400-161-9995</p>',
+        unsafe_allow_html=True,
+    )
+
     st.stop()  # 登录页不渲染后续聊天界面
 
-# 聊天页两侧氛围装饰：fixed 贴边 + pointer-events:none 点击穿透
+# 聊天页两侧氛围装饰：fixed 贴边 + pointer-events:none 点击穿透，每侧4个控制密度
 st.markdown(
-    '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span></div>'
-    '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span></div>',
+    '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span><span>🌱</span><span>🍃</span></div>'
+    '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span><span>⭐</span><span>☁️</span></div>',
     unsafe_allow_html=True,
 )
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
+    # 深夜模式开关（深夜倾诉场景：切换至深紫夜空护眼主题）
+    _dark = st.toggle("🌙 深夜模式", key="dark_mode", help="深夜倾诉时切换至护眼暗色主题")
+    if _dark:
+        st.markdown(_DARK_MODE_CSS, unsafe_allow_html=True)
+
     # 学生昵称/学号输入：key 绑定 session_state.student_name，输入即实时保存，预警时联动上报
     st.text_input("👤 你的专属昵称/学号", key="student_name")
     st.markdown("---")
@@ -1179,6 +1454,13 @@ st.markdown(
 st.markdown(
     "<p style='text-align: center; color: #9BB5A8; font-size: 0.75rem; "
     "margin: 0.5rem 0 0.3rem 0;'>🌱 情绪安全区 | 绝对保密</p>",
+    unsafe_allow_html=True
+)
+# 隐私承诺提示（情绪类产品用户最在意隐私，常驻可见更安心）
+st.markdown(
+    "<p style='text-align: center; color: #A8C4A8; font-size: 0.72rem; "
+    "margin: 0 0 0.5rem 0; opacity: 0.9;'>"
+    "✅ 所有倾诉内容仅本次会话有效，关闭页面自动清空，不上传持久存储</p>",
     unsafe_allow_html=True
 )
 
