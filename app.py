@@ -2,6 +2,8 @@ import os
 import sys
 import subprocess
 import json
+import uuid
+import random
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -312,6 +314,59 @@ def llm_confirm_crisis(text):
     except Exception:
         return True  # 安全兜底：判断失败时按危机处理
 
+# ==================== 匿名会话与预警系统 ====================
+# 【数据隔离原则】
+#   可留存数据：匿名会话编号、预警时间、是否自愿留联系方式、联系方式（仅学生主动填写时）
+#   绝对不能存：学生的对话内容、倾诉原文、任何可识别身份的信息
+ALERTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts.json")
+
+# 获取匿名会话编号：首次访问自动生成8位随机字符串，学生完全无感知、无需登录
+def get_session_id():
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex[:8]
+    return st.session_state.session_id
+
+# 匿名昵称词库：随机组合生成可爱昵称（非真实身份，仅让记录更有温度）
+NICK_PREFIX = ["小", "软", "暖", "甜", "静", "云", "星星", "月亮", "微风", "奶盖"]
+NICK_BODY = ["橘猫", "布偶猫", "奶牛猫", "三花猫", "黑猫", "白猫", "云朵", "棉花糖", "团子", "糯米", "栗子", "汤圆", "曲奇", "抱枕"]
+
+# 获取匿名昵称：首次访问自动生成可爱昵称，学生可自愿修改，非真实身份
+def get_nickname():
+    if "nickname" not in st.session_state:
+        st.session_state.nickname = random.choice(NICK_PREFIX) + random.choice(NICK_BODY)
+    return st.session_state.nickname
+
+# 读取本地预警记录；文件不存在或损坏时返回空列表
+def load_alerts():
+    try:
+        with open(ALERTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+# 追加一条匿名预警记录：严格只保存匿名会话编号与时间，绝不保存对话内容
+def save_alert(alert):
+    alerts = load_alerts()
+    # 同一会话已有未处理预警时不重复记录，避免刷屏
+    if any(a.get("session_id") == alert["session_id"] and not a.get("contact_left") for a in alerts):
+        return
+    alerts.append(alert)
+    with open(ALERTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(alerts, f, ensure_ascii=False, indent=2)
+
+# 学生选择愿意被联系后，更新对应会话的预警记录（携带登录时采集的学号手机号）
+def update_alert_contact(session_id, contact, student_id=None, student_phone=None):
+    alerts = load_alerts()
+    for a in alerts:
+        if a.get("session_id") == session_id and not a.get("contact_left"):
+            a["contact_left"] = True
+            a["contact"] = contact
+            a["student_id"] = student_id
+            a["student_phone"] = student_phone
+            a["contact_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(ALERTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(alerts, f, ensure_ascii=False, indent=2)
+
 # ==================== 自定义 CSS：治愈系树洞风格 ====================
 st.markdown("""
 <style>
@@ -444,28 +499,29 @@ section[data-testid="stSidebar"] [data-testid="stButton"] > button {
 # 数据隔离：alert_logs 只存脱敏简报（时间/身份/风险等级/触发词），不含聊天原文
 if "alert_logs" not in st.session_state:
     st.session_state.alert_logs = []      # 脱敏预警简报列表
+if "student_name" not in st.session_state:
+    st.session_state.student_name = get_nickname()  # 匿名昵称自动生成，侧边栏可修改，预警联动
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False     # 管理员登录状态，默认学生端（密码保护）
 # 静默授权：假设通过校园网自动获取学号，全程无感、绝对保密
 st.session_state.student_id = "2023001(静默授权)"
 
-# ==================== 双视图切换：学生端 / 管理员后台大屏 ====================
-# 侧边栏顶部身份切换下拉框，演示同一系统内两种角色的数据隔离
-with st.sidebar:
-    view_role = st.selectbox("🔄 系统身份切换", ["学生端（无感使用）", "管理员后台大屏"])
-is_admin = (view_role == "管理员后台大屏")
-
-# ==================== 管理员端视图：校园心理危机监控大屏 ====================
-if is_admin:
-    # 管理员侧边栏
+# ==================== 管理员端视图：辅导员监控后台（密码保护） ====================
+# 仅当 is_admin 为 True 时进入；密码验证在主界面右上角的 popover 登录入口完成
+if st.session_state.is_admin:
+    # 管理员侧边栏：仅显示退出按钮，隐藏所有学生端内容（昵称/免责声明等）
     with st.sidebar:
-        st.markdown("---")
         st.markdown(
-            '<div style="background:#1a1a2e; border-radius:10px; padding:10px 14px; text-align:center;">'
-            '<span style="color:#a4b0be; font-size:0.85rem;">👨‍💼 管理员后台模式</span></div>',
+            '<div style="background:#1a1a2e; border-radius:10px; padding:10px 14px; '
+            'text-align:center; margin-bottom:12px;">'
+            '<span style="color:#a4b0be; font-size:0.9rem; font-weight:600;">👨‍💼 辅导员监控后台</span></div>',
             unsafe_allow_html=True
         )
-        st.caption("⚠️ 隐私保护：本系统仅展示风险等级与触发词，绝对不存留任何聊天原文")
+        st.metric("累计预警数", len(load_alerts()))
         st.markdown("---")
-        st.metric("累计预警数", len(st.session_state.alert_logs))
+        if st.button("🔒 安全退出后台", use_container_width=True):
+            st.session_state.is_admin = False
+            st.rerun()
 
     # 深色监控大屏标题卡片
     st.markdown("""
@@ -475,7 +531,7 @@ if is_admin:
                 border: 1px solid rgba(255,255,255,0.08);">
         <div style="display:flex; align-items:center; justify-content:space-between;">
             <div>
-                <h1 style="color:#ff4757; font-size:1.9rem; margin:0; letter-spacing:2px;">🚨 校园心理危机监控台</h1>
+                <h1 style="color:#ff4757; font-size:1.9rem; margin:0; letter-spacing:2px;">🚨 辅导员监控后台</h1>
                 <p style="color:#a4b0be; font-size:0.88rem; margin:0.5rem 0 0 0;">实时监测 · 脱敏上报 · 隐私隔离</p>
             </div>
             <div style="text-align:right;">
@@ -486,71 +542,158 @@ if is_admin:
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # 指标卡片行
-    m1, m2, m3 = st.columns(3)
-    total = len(st.session_state.alert_logs)
-    m1.metric("📋 累计预警", total)
-    m2.metric("🔴 高危记录", total)
-    m3.metric("🛡️ 隐私保护", "100%")
-
-    # 预警记录表格
-    st.markdown("### 📊 脱敏预警记录")
-    if st.session_state.alert_logs:
-        st.dataframe(st.session_state.alert_logs, use_container_width=True, hide_index=True)
+# ==================== 老师查看页面（匿名预警记录，严格隔离） ====================
+# 通过 URL 参数 ?view=teacher 访问，需口令验证；普通学生看不到此入口与任何数据
+if st.query_params.get("view") == "teacher":
+    try:
+        TEACHER_KEY = st.secrets["TEACHER_KEY"]
+    except Exception:
+        TEACHER_KEY = "shudong123456"
+    if "teacher_authed" not in st.session_state:
+        st.session_state.teacher_authed = False
+    if not st.session_state.teacher_authed:
+        st.markdown("<h1 style='text-align:center;color:#6C5B7B;'>🏥 心理预警后台</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;color:#A89BB8;'>仅限心理老师访问，请输入管理口令</p>", unsafe_allow_html=True)
+        pwd = st.text_input("管理口令", type="password")
+        if st.button("进入"):
+            if pwd == TEACHER_KEY:
+                st.session_state.teacher_authed = True
+                st.rerun()
+            else:
+                st.error("口令错误，请重试")
+        if st.button("🏠 返回主页", use_container_width=True):
+            del st.query_params["view"]
+            st.rerun()
+        st.stop()
+    st.markdown("<h1 style='text-align:center;color:#6C5B7B;'>🏥 心理预警记录（匿名）</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center;color:#A89BB8;font-size:0.9rem;'>为保护学生隐私，记录不含任何对话内容与身份信息，仅用于全校心理关怀与风险摸排</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(
+            '<div style="color:#6C5B7B;font-size:0.85rem;line-height:1.9;">'
+            '<b>🔒 隐私保障说明</b><br>'
+            '• 本系统<b>不存储任何聊天记录</b>，学生对话仅存在于其浏览器内存中，关闭页面即消失<br>'
+            '• 此处显示：<b>学号、手机号、匿名昵称、匿名会话编号、预警时间</b><br>'
+            '• 学号和手机号仅心理老师可见，其他任何人不可见<br>'
+            '• 老师无法查看任何学生的对话内容<br>'
+            '• 是否愿意被老师主动联系由学生自愿选择'
+            '</div>',
+            unsafe_allow_html=True
+        )
+    alerts = load_alerts()
+    if not alerts:
+        st.info("暂无预警记录")
     else:
-        st.success("✅ 当前校园安全，无预警")
+        st.caption("共 " + str(len(alerts)) + " 条记录")
+        for a in reversed(alerts):
+            with st.container(border=True):
+                c1, c2 = st.columns([3, 2])
+                with c1:
+                    if a.get("nickname"):
+                        st.markdown("**匿名昵称**：🏷️ " + a["nickname"])
+                    st.markdown("**匿名会话**：`" + a["session_id"] + "`")
+                    st.markdown("**预警时间**：" + a["time"])
+                with c2:
+                    if a.get("student_id"):
+                        st.markdown("**学号**：`" + str(a.get("student_id", "")) + "`")
+                    if a.get("student_phone"):
+                        st.markdown("**手机号**：" + str(a.get("student_phone", "")))
+                    if a.get("contact_left"):
+                        st.success("✅ 学生愿意被联系")
+                        st.markdown("**选择时间**：" + str(a.get("contact_time", "")))
+                    else:
+                        st.warning("学生未选择被联系")
+    # 返回主页按钮
+    if st.button("🏠 返回主页", use_container_width=True):
+        del st.query_params["view"]
+        st.session_state.teacher_authed = False
+        st.rerun()
+    st.stop()
 
-    # 隐私保护强调声明（深色横幅）
-    st.markdown("""
-    <div style="background:#2d3436; border-left:4px solid #00b894; border-radius:8px;
-                padding:1rem 1.2rem; margin-top:1rem;">
-        <span style="color:#00b894; font-size:0.95rem; font-weight:600;">
-            ⚠️ 隐私保护：本系统仅展示风险等级与触发词，绝对不存留任何聊天原文
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
+# 学生打开页面一瞬间即自动生成匿名会话编号，完全无感知、无需任何登录
+get_session_id()
 
-    st.stop()  # 管理员端不渲染学生聊天界面
-
-# ==================== 封面页：点击进入主界面 ====================
-# 进入标记：首次访问显示封面，点击后进入聊天界面
+# ==================== 登录页：学生填写学号手机号 / 老师口令登录 ====================
+# 进入标记：登录成功后进入聊天界面
 if "entered" not in st.session_state:
     st.session_state.entered = False
 
 if not st.session_state.entered:
-    # 加载提示：仅封面页显示，进入主界面后不再出现
-    st.caption("🐾 正在唤醒你的树洞猫咪，请稍候喵~")
+    # 登录页隐藏侧边栏与聊天输入框
+    st.markdown("""
+    <style>
+    section[data-testid="stSidebar"] {display: none !important;}
+    [data-testid="stChatInput"] {display: none !important;}
+    </style>
+    """, unsafe_allow_html=True)
 
-    # 侧边栏保持可见：身份切换下拉框需始终可操作（双视图演示）
-    # 封面欢迎语（垂直居中）
+    # 登录页欢迎语（紧凑居中 + 装饰点缀）
     st.markdown("""
     <div class="cover-container">
+        <div class="cover-paws">🐾 🐱 🐾</div>
         <h1 class="cover-title">🐱 树洞猫咪</h1>
-        <p class="cover-subtitle">你的专属情绪倾听者</p >
+        <p class="cover-subtitle">你的专属情绪倾听者</p>
         <p class="cover-desc">
             在这里，你可以卸下所有伪装。<br>
             没有评判，没有说教，只有一只温柔的猫咪愿意听你说话。
-        </p >
+        </p>
+        <div class="cover-features">
+            <div class="cover-feature">🔒 匿名安全</div>
+            <div class="cover-feature">🐾 温柔陪伴</div>
+            <div class="cover-feature">💬 绝不存储</div>
+        </div>
     </div>
+    <div class="cover-divider"><span class="line"></span><span class="dot">🐾</span><span class="line"></span></div>
     """, unsafe_allow_html=True)
 
     # 猫咪头像（居中展示）
     _, img_col, _ = st.columns([1, 1.2, 1])
     with img_col:
-        st.image(CAT_AVATAR, width=260)
+        st.image(CAT_AVATAR, width=160)
 
-    # 进入按钮（居中）
-    _, btn_col, _ = st.columns([1, 1, 1])
-    with btn_col:
-        if st.button("🐾 轻触进入树洞", use_container_width=True):
+    # 学生登录表单（学号 + 手机号必填，仅心理老师可见）
+    _, form_col, _ = st.columns([1, 1.2, 1])
+    with form_col:
+        with st.expander("🐾 学生登录", expanded=False):
+            st.caption("🔒 学号和手机号仅心理老师紧急关怀时可见，其他人不可见，聊天内容绝不存储")
+            login_sid = st.text_input("学号", key="login_sid", placeholder="请输入你的学号")
+            login_phone = st.text_input("手机号", key="login_phone", placeholder="请输入你的手机号")
+            if st.button("🐾 进入树洞", use_container_width=True):
+                if login_sid.strip() and login_phone.strip():
+                    st.session_state.student_id = login_sid.strip()
+                    st.session_state.student_phone = login_phone.strip()
+                    st.session_state.entered = True
+                    st.rerun()
+                else:
+                    st.error("请填写学号和手机号后再进入哦")
+
+    st.markdown('<p style="text-align:center;color:#C4B5D9;font-size:0.78rem;margin:0.3rem 0;">— 或者 —</p>', unsafe_allow_html=True)
+
+    # 旁观者入口：无需填写信息，直接进入主页体验
+    _, obs_col, _ = st.columns([1, 1.2, 1])
+    with obs_col:
+        if st.button("👀 我只是随便看看", use_container_width=True, help="无需填写信息，直接进入体验"):
+            st.session_state.student_id = ""
+            st.session_state.student_phone = ""
+            st.session_state.is_observer = True
             st.session_state.entered = True
             st.rerun()
 
-    st.stop()  # 封面页不渲染后续聊天界面
+    # 老师登录入口（独立于学生登录）
+    st.markdown("<div style='text-align:center; margin-top:0.8rem;'></div>", unsafe_allow_html=True)
+    _, teacher_col, _ = st.columns([1, 0.5, 1])
+    with teacher_col:
+        if st.button("🔐 老师入口", help="仅限心理老师访问", use_container_width=True):
+            st.query_params["view"] = "teacher"
+            st.rerun()
+
+    st.stop()  # 登录页不渲染后续聊天界面
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
+    # 学生昵称/学号输入：key 绑定 session_state.student_name，输入即实时保存，预警时联动上报
+    st.text_input("👤 你的专属昵称/学号", key="student_name")
+    st.markdown("---")
+
     # 无感授权提示：绿字显示静默连接校园网
     st.markdown(
         '<span style="color:#27ae60; font-size:0.9rem; font-weight:600;">'
@@ -619,6 +762,8 @@ with st.sidebar:
     if st.button("🏠 返回封面", use_container_width=True):
         st.session_state.entered = False
         st.rerun()
+
+    # 管理员登录入口已移至主界面右上角（st.popover），侧边栏不再显示
 
 # ==================== 情绪快捷按钮（省赛核心亮点·动态推荐版） ====================
 # 很多有情绪困扰的用户面对输入框会大脑空白，快捷按钮帮他们迈出第一步。
@@ -727,8 +872,13 @@ def pick_quick_replies():
 
 # ==================== 主页面 ====================
 
-# 主标题
+# 主标题 + 当前对话人昵称
 st.markdown("<h1 style='text-align: center; color: #6C5B7B;'>树洞猫咪：你的专属情绪倾听者</h1>", unsafe_allow_html=True)
+st.markdown(
+    f"<p style='text-align: center; color: #8E7CA8; font-size: 0.85rem; margin: 0.2rem 0 0 0;'>"
+    f"👤 当前对话人：{st.session_state.student_name}</p>",
+    unsafe_allow_html=True
+)
 
 
 
@@ -751,22 +901,48 @@ for message in st.session_state.messages:
             )
         st.markdown(message["content"])
 
-# 情绪快捷按钮行：放在输入框正上方，根据用户当前心境动态推荐
-picked_quick = pick_quick_replies()
-if last_emotion_hint := next((m.get("emotion", "") for m in reversed(st.session_state.messages) if m["role"] == "user" and m.get("emotion")), ""):
-    hint_text = f"猫咪感觉到你有些{last_emotion_hint}，也许这些能帮到你~"
+# 危机后自愿联系区域：危机触发后让学生自愿决定是否被联系（数据隔离，仅存联系方式）
+if st.session_state.get("contact_submitted"):
+    st.success("💌 已经收到啦，老师会尽快联系你。猫咪一直在这里陪着你~🐾")
+elif st.session_state.get("crisis_active"):
+    with st.container(border=True):
+        st.markdown("💌 **如果你愿意，可以让老师联系你**（完全自愿，随时可以拒绝）")
+        contact = st.text_input("联系方式（手机号 / QQ / 微信均可）", key="crisis_contact_input")
+        c_col1, c_col2 = st.columns(2)
+        with c_col1:
+            if st.button("提交联系方式", use_container_width=True, type="primary"):
+                if contact.strip():
+                    update_alert_contact(
+                        get_session_id(), contact.strip(),
+                        student_id=st.session_state.get("student_id"),
+                        student_phone=contact.strip() if contact.strip().isdigit() else None,
+                    )
+                    st.session_state.crisis_active = False
+                    st.session_state.contact_submitted = True
+                    st.rerun()
+                else:
+                    st.warning("请先填写联系方式哦~")
+        with c_col2:
+            if st.button("暂时不用了", use_container_width=True):
+                st.session_state.crisis_active = False
+                st.rerun()
 else:
-    hint_text = "不知道说什么？点一下就好~"
-st.markdown(f"<p style='text-align:center; color:#A89BB8; font-size:0.8rem; margin:0.3rem 0 0.2rem;'>{hint_text}</p>", unsafe_allow_html=True)
-quick_cols = st.columns(len(picked_quick))
-for col, q in zip(quick_cols, picked_quick):
-    with col:
-        if st.button(q["label"], use_container_width=True, key=f"quick_{q['label']}"):
-            # 点击快捷按钮：把文案作为用户消息（带情绪标签，供下轮动态推荐）、预设回复作为猫咪消息
-            btn_emotion = q["emotions"][0] if q["emotions"] else ""
-            st.session_state.messages.append({"role": "user", "content": q["label"], "emotion": btn_emotion})
-            st.session_state.messages.append({"role": "assistant", "content": q["reply"]})
-            st.rerun()
+    # 情绪快捷按钮行：放在输入框正上方，根据用户当前心境动态推荐
+    picked_quick = pick_quick_replies()
+    if last_emotion_hint := next((m.get("emotion", "") for m in reversed(st.session_state.messages) if m["role"] == "user" and m.get("emotion")), ""):
+        hint_text = f"猫咪感觉到你有些{last_emotion_hint}，也许这些能帮到你~"
+    else:
+        hint_text = "不知道说什么？点一下就好~"
+    st.markdown(f"<p style='text-align:center; color:#A89BB8; font-size:0.8rem; margin:0.3rem 0 0.2rem;'>{hint_text}</p>", unsafe_allow_html=True)
+    quick_cols = st.columns(len(picked_quick))
+    for col, q in zip(quick_cols, picked_quick):
+        with col:
+            if st.button(q["label"], use_container_width=True, key=f"quick_{q['label']}"):
+                # 点击快捷按钮：把文案作为用户消息（带情绪标签，供下轮动态推荐）、预设回复作为猫咪消息
+                btn_emotion = q["emotions"][0] if q["emotions"] else ""
+                st.session_state.messages.append({"role": "user", "content": q["label"], "emotion": btn_emotion})
+                st.session_state.messages.append({"role": "assistant", "content": q["reply"]})
+                st.rerun()
 
 # 接收用户输入
 if prompt := st.chat_input("跟我说点什么吧..."):
@@ -787,13 +963,23 @@ if prompt := st.chat_input("跟我说点什么吧..."):
         combined_amb = AMBIGUOUS_KEYWORDS + [w for w in live_a if w not in AMBIGUOUS_KEYWORDS]
         hit_word = next((kw for kw in combined_high + combined_amb if kw in lowered_log), prompt[:15])
         alert_brief = {
+            "学生": st.session_state.student_name,
+            "风险": "高危",
             "时间": "刚刚",
-            "身份": "学生(静默授权)",
-            "风险等级": "🔴 高危",
             "触发词": hit_word,
         }
         print(f"[脱敏预警简报] {alert_brief}")  # 后台打印（不含聊天原文）
         st.session_state.alert_logs.append(alert_brief)
+
+        # 持久化匿名预警到 alerts.json（只存会话编号/昵称/时间/触发词，绝不存对话原文）
+        save_alert({
+            "session_id": get_session_id(),
+            "nickname": get_nickname(),
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "risk_level": "高危",
+            "trigger_word": hit_word,
+            "contact_left": False,
+        })
 
         with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(prompt)
@@ -803,9 +989,13 @@ if prompt := st.chat_input("跟我说点什么吧..."):
             st.error("请立刻拨打 24 小时心理援助热线：400-161-9995")
             st.markdown(CRISIS_REPLY)
         st.session_state.messages.append({"role": "assistant", "content": CRISIS_REPLY})
+        st.session_state.crisis_active = True  # 标记危机状态，主页面据此显示自愿联系表单
         st.stop()
 
-    # 未命中：从并行任务中拿情绪识别结果（此时大概率已完成，无需再等）
+    # 未命中：重置危机状态，恢复正常聊天
+    st.session_state.crisis_active = False
+    st.session_state.contact_submitted = False
+    # 从并行任务中拿情绪识别结果（此时大概率已完成，无需再等）
     emotion = emotion_future.result()
     with st.chat_message("user", avatar=USER_AVATAR):
         if emotion:
