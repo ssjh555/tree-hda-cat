@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import json
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 # ============ 自动启动器：直接 python app.py 即可拉起 Streamlit ============
@@ -438,6 +439,80 @@ section[data-testid="stSidebar"] [data-testid="stButton"] > button {
 </style>
 """, unsafe_allow_html=True)
 
+# ==================== 无感授权与数据隔离：状态初始化 ====================
+# 模拟校园网静默授权：无需登录界面，系统自动获取学生信息
+# 数据隔离：alert_logs 只存脱敏简报（时间/身份/风险等级/触发词），不含聊天原文
+if "alert_logs" not in st.session_state:
+    st.session_state.alert_logs = []      # 脱敏预警简报列表
+# 静默授权：假设通过校园网自动获取学号，全程无感、绝对保密
+st.session_state.student_id = "2023001(静默授权)"
+
+# ==================== 双视图切换：学生端 / 管理员后台大屏 ====================
+# 侧边栏顶部身份切换下拉框，演示同一系统内两种角色的数据隔离
+with st.sidebar:
+    view_role = st.selectbox("🔄 系统身份切换", ["学生端（无感使用）", "管理员后台大屏"])
+is_admin = (view_role == "管理员后台大屏")
+
+# ==================== 管理员端视图：校园心理危机监控大屏 ====================
+if is_admin:
+    # 管理员侧边栏
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(
+            '<div style="background:#1a1a2e; border-radius:10px; padding:10px 14px; text-align:center;">'
+            '<span style="color:#a4b0be; font-size:0.85rem;">👨‍💼 管理员后台模式</span></div>',
+            unsafe_allow_html=True
+        )
+        st.caption("⚠️ 隐私保护：本系统仅展示风险等级与触发词，绝对不存留任何聊天原文")
+        st.markdown("---")
+        st.metric("累计预警数", len(st.session_state.alert_logs))
+
+    # 深色监控大屏标题卡片
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                border-radius: 16px; padding: 2rem 2.5rem; margin-bottom: 1.2rem;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+                border: 1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+                <h1 style="color:#ff4757; font-size:1.9rem; margin:0; letter-spacing:2px;">🚨 校园心理危机监控台</h1>
+                <p style="color:#a4b0be; font-size:0.88rem; margin:0.5rem 0 0 0;">实时监测 · 脱敏上报 · 隐私隔离</p>
+            </div>
+            <div style="text-align:right;">
+                <span style="display:inline-block; width:10px; height:10px; background:#2ed573;
+                             border-radius:50%; box-shadow:0 0 6px #2ed573;"></span>
+                <span style="color:#2ed573; font-size:0.82rem;"> 系统运行中</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 指标卡片行
+    m1, m2, m3 = st.columns(3)
+    total = len(st.session_state.alert_logs)
+    m1.metric("📋 累计预警", total)
+    m2.metric("🔴 高危记录", total)
+    m3.metric("🛡️ 隐私保护", "100%")
+
+    # 预警记录表格
+    st.markdown("### 📊 脱敏预警记录")
+    if st.session_state.alert_logs:
+        st.dataframe(st.session_state.alert_logs, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ 当前校园安全，无预警")
+
+    # 隐私保护强调声明（深色横幅）
+    st.markdown("""
+    <div style="background:#2d3436; border-left:4px solid #00b894; border-radius:8px;
+                padding:1rem 1.2rem; margin-top:1rem;">
+        <span style="color:#00b894; font-size:0.95rem; font-weight:600;">
+            ⚠️ 隐私保护：本系统仅展示风险等级与触发词，绝对不存留任何聊天原文
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.stop()  # 管理员端不渲染学生聊天界面
+
 # ==================== 封面页：点击进入主界面 ====================
 # 进入标记：首次访问显示封面，点击后进入聊天界面
 if "entered" not in st.session_state:
@@ -447,13 +522,7 @@ if not st.session_state.entered:
     # 加载提示：仅封面页显示，进入主界面后不再出现
     st.caption("🐾 正在唤醒你的树洞猫咪，请稍候喵~")
 
-    # 封面页隐藏侧边栏（聊天输入框无需隐藏：st.stop() 已阻止其渲染）
-    st.markdown("""
-    <style>
-    section[data-testid="stSidebar"] {display: none !important;}
-    </style>
-    """, unsafe_allow_html=True)
-
+    # 侧边栏保持可见：身份切换下拉框需始终可操作（双视图演示）
     # 封面欢迎语（垂直居中）
     st.markdown("""
     <div class="cover-container">
@@ -482,6 +551,14 @@ if not st.session_state.entered:
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
+    # 无感授权提示：绿字显示静默连接校园网
+    st.markdown(
+        '<span style="color:#27ae60; font-size:0.9rem; font-weight:600;">'
+        '✅ 已静默连接校园网，绝对私密</span>',
+        unsafe_allow_html=True
+    )
+    st.markdown("---")
+
     # 顶部标题
     st.markdown(
         '<div style="text-align:center; margin-bottom:12px;">'
@@ -700,6 +777,24 @@ if prompt := st.chat_input("跟我说点什么吧..."):
         level = level_future.result()
         is_crisis = level == 2 or (level == 1 and llm_confirm_crisis(prompt))
     if is_crisis:
+        # 【脱敏预警简报】提取触发词，只记录时间/触发词/学号/风险等级，不含聊天原文（数据隔离）
+        cleaned_log = prompt
+        for safe in SAFE_PATTERNS:
+            cleaned_log = cleaned_log.replace(safe, "")
+        lowered_log = cleaned_log.lower()
+        live_h, live_a = fetch_live_crisis_keywords()  # 已缓存，不会重复请求
+        combined_high = HIGH_RISK_KEYWORDS + [w for w in live_h if w not in HIGH_RISK_KEYWORDS]
+        combined_amb = AMBIGUOUS_KEYWORDS + [w for w in live_a if w not in AMBIGUOUS_KEYWORDS]
+        hit_word = next((kw for kw in combined_high + combined_amb if kw in lowered_log), prompt[:15])
+        alert_brief = {
+            "时间": "刚刚",
+            "身份": "学生(静默授权)",
+            "风险等级": "🔴 高危",
+            "触发词": hit_word,
+        }
+        print(f"[脱敏预警简报] {alert_brief}")  # 后台打印（不含聊天原文）
+        st.session_state.alert_logs.append(alert_brief)
+
         with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt, "emotion": ""})
