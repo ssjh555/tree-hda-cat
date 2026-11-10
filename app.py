@@ -846,17 +846,27 @@ section[data-testid="stSidebar"] label {
 </style>
 """
 
-# ==================== 无感授权与数据隔离：状态初始化 ====================
-# 模拟校园网静默授权：无需登录界面，系统自动获取学生信息
+# ==================== 登录状态初始化 ====================
+# 手机号+验证码无痕登录：仅存脱敏尾号，不存完整手机号到任何持久化文件
 # 数据隔离：alert_logs 只存脱敏简报（时间/身份/风险等级/触发词），不含聊天原文
 if "alert_logs" not in st.session_state:
     st.session_state.alert_logs = []      # 脱敏预警简报列表
-if "student_name" not in st.session_state:
-    st.session_state.student_name = get_nickname()  # 匿名昵称自动生成，侧边栏可修改，预警联动
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False    # 手机号+验证码登录状态
+if "phone_num" not in st.session_state:
+    st.session_state.phone_num = ""       # 登录手机号（仅内存，脱敏展示）
+if "captcha_ans" not in st.session_state:
+    st.session_state.captcha_ans = None   # 当前验证码正确答案
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False     # 管理员登录状态，默认学生端（密码保护）
-# 静默授权：假设通过校园网自动获取学号，全程无感、绝对保密
-st.session_state.student_id = "2023001(静默授权)"
+if "page_state" not in st.session_state:
+    st.session_state.page_state = "login"  # 页面流转：login → test（破冰） → chat
+if "test_q_idx" not in st.session_state:
+    st.session_state.test_q_idx = None     # 破冰测试随机抽中的题号
+if "test_answered" not in st.session_state:
+    st.session_state.test_answered = False # 破冰测试是否已提交答案
+if "user_nickname" not in st.session_state:
+    st.session_state.user_nickname = ""     # 自定义昵称（可选，空则展示脱敏尾号）
 
 # ==================== 管理员端视图：辅导员监控后台（密码保护） ====================
 # 仅当 is_admin 为 True 时进入；密码验证在主界面右上角的 popover 登录入口完成
@@ -900,7 +910,7 @@ if st.query_params.get("view") == "teacher":
     try:
         TEACHER_KEY = st.secrets["TEACHER_KEY"]
     except Exception:
-        TEACHER_KEY = "shudong123456"
+        TEACHER_KEY = "树洞123456"
     if "teacher_authed" not in st.session_state:
         st.session_state.teacher_authed = False
     if not st.session_state.teacher_authed:
@@ -924,8 +934,8 @@ if st.query_params.get("view") == "teacher":
             '<div style="color:#6C5B7B;font-size:0.85rem;line-height:1.9;">'
             '<b>🔒 隐私保障说明</b><br>'
             '• 本系统<b>不存储任何聊天记录</b>，学生对话仅存在于其浏览器内存中，关闭页面即消失<br>'
-            '• 此处显示：<b>学号、手机号、匿名昵称、匿名会话编号、预警时间</b><br>'
-            '• 学号和手机号仅心理老师可见，其他任何人不可见<br>'
+            '• 此处显示：<b>脱敏手机号（尾号）、匿名会话编号、预警时间</b><br>'
+            '• 手机号仅心理老师紧急关怀时可见，其他任何人不可见<br>'
             '• 老师无法查看任何学生的对话内容<br>'
             '• 是否愿意被老师主动联系由学生自愿选择'
             '</div>',
@@ -941,14 +951,12 @@ if st.query_params.get("view") == "teacher":
                 c1, c2 = st.columns([3, 2])
                 with c1:
                     if a.get("nickname"):
-                        st.markdown("**匿名昵称**：🏷️ " + a["nickname"])
+                        st.markdown("**用户标识**：📱 " + a["nickname"])
                     st.markdown("**匿名会话**：`" + a["session_id"] + "`")
                     st.markdown("**预警时间**：" + a["time"])
                 with c2:
-                    if a.get("student_id"):
-                        st.markdown("**学号**：`" + str(a.get("student_id", "")) + "`")
                     if a.get("student_phone"):
-                        st.markdown("**手机号**：" + str(a.get("student_phone", "")))
+                        st.markdown("**联系电话**：" + str(a.get("student_phone", "")))
                     if a.get("contact_left"):
                         st.success("✅ 学生愿意被联系")
                         st.markdown("**选择时间**：" + str(a.get("contact_time", "")))
@@ -964,12 +972,8 @@ if st.query_params.get("view") == "teacher":
 # 学生打开页面一瞬间即自动生成匿名会话编号，完全无感知、无需任何登录
 get_session_id()
 
-# ==================== 登录页：学生填写学号手机号 / 老师口令登录 ====================
-# 进入标记：登录成功后进入聊天界面
-if "entered" not in st.session_state:
-    st.session_state.entered = False
-
-if not st.session_state.entered:
+# ==================== 登录页：手机号 + 数学题验证码无痕登录 ====================
+if not st.session_state.logged_in:
     # 登录页隐藏侧边栏与聊天输入框 + 封面内容垂直居中（消除下方大片留白）
     st.markdown("""
     <style>
@@ -984,22 +988,7 @@ if not st.session_state.entered:
         padding-top: 1.5rem !important;
         padding-bottom: 1.5rem !important;
     }
-    /* 封面主入口（用户登录 expander）：浅暖底色主视觉，引导用户填写信息进入 */
-    [data-testid="stExpander"] {
-        border: none !important;
-        border-radius: 25px !important;
-        background: linear-gradient(135deg, #FFE8D6, #FFDBC5) !important;
-        box-shadow: 0 4px 14px rgba(224, 166, 122, 0.35) !important;
-    }
-    [data-testid="stExpander"] summary {
-        color: #9C6B4A !important;
-        font-weight: 700 !important;
-        font-size: 1.02rem !important;
-    }
-    [data-testid="stExpander"] summary svg {
-        color: #9C6B4A !important;
-    }
-    /* 封面次要按钮（随便看看/老师入口）：线条风格，弱化视觉权重 */
+    /* 封面次要按钮（老师入口）：线条风格，弱化视觉权重 */
     [data-testid="stButton"] > button:not([kind="primary"]) {
         background: transparent !important;
         color: #8E7CA8 !important;
@@ -1127,33 +1116,38 @@ if not st.session_state.entered:
         unsafe_allow_html=True,
     )
 
-    # 主入口：用户登录（浅暖底色突出，学号+手机号必填，仅心理老师可见）
+    # 手机号 + 验证码无痕登录表单
     _, form_col, _ = st.columns([1, 1.2, 1])
     with form_col:
-        with st.expander("🐾 用户登录", expanded=False):
-            st.caption("🔒 学号和手机号仅心理老师紧急关怀时可见，其他人不可见，聊天内容绝不存储")
-            login_sid = st.text_input("学号", key="login_sid", placeholder="请输入你的学号")
-            login_phone = st.text_input("手机号", key="login_phone", placeholder="请输入你的手机号")
-            if st.button("🐾 进入树洞", use_container_width=True, type="primary"):
-                if login_sid.strip() and login_phone.strip():
-                    st.session_state.student_id = login_sid.strip()
-                    st.session_state.student_phone = login_phone.strip()
-                    st.session_state.entered = True
-                    st.rerun()
-                else:
-                    st.error("请填写学号和手机号后再进入哦")
-
-    st.markdown('<p style="text-align:center;color:#C4B5D9;font-size:0.78rem;margin:0.3rem 0;">— 或者 —</p>', unsafe_allow_html=True)
-
-    # 次要入口：旁观者（线条按钮风格，无需填写信息，直接体验）
-    _, obs_col, _ = st.columns([1, 1.2, 1])
-    with obs_col:
-        if st.button("👀 我只是随便看看", use_container_width=True, help="无需填写信息，直接进入体验"):
-            st.session_state.student_id = ""
-            st.session_state.student_phone = ""
-            st.session_state.is_observer = True
-            st.session_state.entered = True
-            st.rerun()
+        st.markdown(
+            '<p style="text-align:center;color:#8E7CA8;font-size:0.85rem;margin:0.3rem 0 0.8rem 0;">'
+            '为了保护你的绝对隐私，请使用手机号无痕登录。</p>',
+            unsafe_allow_html=True,
+        )
+        login_phone = st.text_input("📱 请输入手机号", key="login_phone", placeholder="11位手机号", max_chars=11)
+        login_nickname = st.text_input("🐾 给自己起个名字（可选）", key="login_nickname", placeholder="小猫会这样叫你哦", max_chars=12)
+        login_captcha = st.text_input("🔐 请输入验证码", key="login_captcha", placeholder="点击下方获取验证码")
+        if st.button("� 获取验证码", use_container_width=True):
+            _a = random.randint(1, 9)
+            _b = random.randint(1, 9)
+            st.session_state.captcha_ans = _a + _b
+            st.session_state.captcha_q = f"{_a} + {_b}"
+            st.success(f"模拟验证码短信：请回答 {_a} + {_b} = ? 以完成验证。")
+        if st.button("🐾 验证并进入", use_container_width=True, type="primary"):
+            _phone = login_phone.strip()
+            _captcha = login_captcha.strip()
+            if not (_phone.isdigit() and len(_phone) == 11):
+                st.error("请输入正确的11位手机号哦")
+            elif st.session_state.captcha_ans is None:
+                st.error("请先点击「获取验证码」")
+            elif not _captcha.isdigit() or int(_captcha) != st.session_state.captcha_ans:
+                st.error("验证码答案不正确，请重新回答")
+            else:
+                st.session_state.logged_in = True
+                st.session_state.phone_num = _phone
+                st.session_state.user_nickname = login_nickname.strip()  # 可选昵称，空则回退脱敏尾号
+                st.session_state.page_state = "test"   # 登录成功 → 进入森林微测试破冰
+                st.rerun()
 
     # 老师登录入口（独立于用户登录）
     st.markdown("<div style='text-align:center; margin-top:0.8rem;'></div>", unsafe_allow_html=True)
@@ -1175,6 +1169,214 @@ if not st.session_state.entered:
 
     st.stop()  # 登录页不渲染后续聊天界面
 
+# ==================== 森林微测试破冰页（登录后 → 聊天前） ====================
+# 设计理念：从15道经典森林心理测试中随机抽1题作趣味破冰，降低开口门槛；仅供娱乐，不做任何心理诊断
+FOREST_QUESTIONS = [
+    {
+        "q": "🌲 森林中这个小木屋的门现在是什么状态？",
+        "options": ["开着门", "关着门"],
+        "analysis": {
+            "开着门": "门代表分享意愿——你是一个任何事都愿与别人分享的人 🤝",
+            "关着门": "门代表分享意愿——你是一个更愿自己静静去做的人 🌿",
+        },
+    },
+    {
+        "q": "🪵 你走进屋子里看见一张桌子，你觉得桌子是什么形状？",
+        "options": ["圆形", "方形", "三角形"],
+        "analysis": {
+            "圆形": "桌子形状代表交友态度——你完全地信任并接受所有朋友 💛",
+            "方形": "桌子形状代表交友态度——你只和比较熟的朋友有一些来往 🤗",
+            "三角形": "桌子形状代表交友态度——你是一个对朋友有自己要求的人 ✨",
+        },
+    },
+    {
+        "q": "🏺 桌子上有个花瓶，瓶子里有水，你觉得花瓶里有多少水？",
+        "options": ["空的", "一半", "满的"],
+        "analysis": {
+            "空的": "瓶中水代表对当前生活的看法——或许现在的你有些不满足，树洞陪你慢慢来 🌱",
+            "一半": "瓶中水代表对当前生活的看法——生活有一半达到了你的理想，继续加油 💪",
+            "满的": "瓶中水代表对当前生活的看法——你对当前的生活非常满意 🌟",
+        },
+    },
+    {
+        "q": "✨ 这个花瓶是什么材料做的？",
+        "options": ["玻璃", "陶瓷", "金属", "塑料"],
+        "analysis": {
+            "玻璃": "花瓶质地代表生活状态——你是一个细腻而需要被温柔照顾的人 🌸",
+            "陶瓷": "花瓶质地代表生活状态——你是一个细腻而需要被温柔照顾的人 🌸",
+            "金属": "花瓶质地代表生活状态——你在生活里是一个强者 💪",
+            "塑料": "花瓶质地代表生活状态——你在生活里是一个强者 💪",
+        },
+    },
+    {
+        "q": "💧 你出了屋子继续向森林深处走去，远处有瀑布，水流的速度是多少？",
+        "options": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+        "analysis": {
+            "1": "水流速度代表欲望——你的欲望很低，喜欢平静的生活 🍃",
+            "2": "水流速度代表欲望——你的欲望很低，喜欢平静的生活 🍃",
+            "3": "水流速度代表欲望——你的欲望很低，喜欢平静的生活 🍃",
+            "4": "水流速度代表欲望——你的欲望很低，喜欢平静的生活 🍃",
+            "5": "水流速度代表欲望——你的欲望处于中等水平 ⚖️",
+            "6": "水流速度代表欲望——你的欲望很强，充满干劲 🔥",
+            "7": "水流速度代表欲望——你的欲望很强，充满干劲 🔥",
+            "8": "水流速度代表欲望——你的欲望很强，充满干劲 🔥",
+            "9": "水流速度代表欲望——你的欲望很强，充满干劲 🔥",
+            "10": "水流速度代表欲望——你的欲望极强，永远充满热情 🚀",
+        },
+    },
+    {
+        "q": "🔑 走过瀑布，你看见地面上有一串钥匙环，有多少钥匙拴在上面？",
+        "options": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+        "analysis": {
+            "1": "钥匙数量代表好友数量——你有一个非常知心的好朋友 💛",
+            "2": "钥匙数量代表好友数量——你有一些好朋友 🤗",
+            "3": "钥匙数量代表好友数量——你有一些好朋友 🤗",
+            "4": "钥匙数量代表好友数量——你有一些好朋友 🤗",
+            "5": "钥匙数量代表好友数量——你有一些好朋友 🤗",
+            "6": "钥匙数量代表好友数量——你有许多好朋友 🎉",
+            "7": "钥匙数量代表好友数量——你有许多好朋友 🎉",
+            "8": "钥匙数量代表好友数量——你有许多好朋友 🎉",
+            "9": "钥匙数量代表好友数量——你有许多好朋友 🎉",
+            "10": "钥匙数量代表好友数量——你有许多好朋友 🎉",
+        },
+    },
+    {
+        "q": "🏰 你再接着往前走，突然发现前面出现了一座城堡，你觉得城堡是？",
+        "options": ["新的", "旧的"],
+        "analysis": {
+            "新的": "城堡代表你的过去——你过去有一段很好的关系，留下了美好印象 🌈",
+            "旧的": "城堡代表你的过去——过去的交往中有一段不好的回忆，但那已成为过去 🍂",
+        },
+    },
+    {
+        "q": "💎 城堡里有一个水池，黑色的池水里堆满了闪闪发光的宝石，你会？",
+        "options": ["捡起宝石", "不捡"],
+        "analysis": {
+            "捡起宝石": "从脏水池捡宝石——就算有伴侣在身边，你也会想和周围的人调情 😏",
+            "不捡": "从脏水池捡宝石——当你的伴侣在身边时，你绝大多数时候只围着Ta转 💕",
+        },
+    },
+    {
+        "q": "🪙 在水池旁边还有一个泳池，水面清澈，漂浮着很多钱币，你会？",
+        "options": ["捡起钱币", "不捡"],
+        "analysis": {
+            "捡起钱币": "从清澈泳池捡钱币——当你的伴侣不在身边时，你会和周围的人调情 😉",
+            "不捡": "从清澈泳池捡钱币——无论Ta是否在身边，你始终会忠于Ta 💖",
+        },
+    },
+    {
+        "q": "📦 你继续往前走出城堡，外面有一座大花园，地上有一个箱子。它的尺寸？",
+        "options": ["大", "中", "小"],
+        "analysis": {
+            "大": "箱子大小代表自负程度——你是一个非常自信的人 😎",
+            "中": "箱子大小代表自负程度——你是一个比较自信的人 🙂",
+            "小": "箱子大小代表自负程度——你是一个谦虚低调的人 🌾",
+        },
+    },
+    {
+        "q": "🧰 这个箱子是什么材料做的？",
+        "options": ["硬纸板", "纸", "木头", "金属"],
+        "analysis": {
+            "硬纸板": "箱子材料代表性格特点——你性格谦虚温和 🌾",
+            "纸": "箱子材料代表性格特点——你性格谦虚温和 🌾",
+            "木头": "箱子材料代表性格特点——你性格谦虚温和 🌾",
+            "金属": "箱子材料代表性格特点——你性格骄傲有主见 🦁",
+        },
+    },
+    {
+        "q": "🌉 花园里还有一座桥就在离着箱子的不远处。桥是什么材料造的？",
+        "options": ["藤条", "金属", "木头"],
+        "analysis": {
+            "藤条": "桥的材料代表和朋友的关系——你比较独立，没有特别依赖的朋友 🌿",
+            "金属": "桥的材料代表和朋友的关系——你有关系非常亲密的朋友 💪",
+            "木头": "桥的材料代表和朋友的关系——你有关系比较亲密的朋友 🤝",
+        },
+    },
+    {
+        "q": "🐴 过了这座桥，有一匹马，它是什么颜色？",
+        "options": ["白色", "灰色", "褐色", "黑色"],
+        "analysis": {
+            "白色": "马的颜色代表对另一半的印象——在你心中Ta非常好 ✨",
+            "灰色": "马的颜色代表对另一半的印象——在你心中Ta一般般 🙂",
+            "褐色": "马的颜色代表对另一半的印象——在你心中Ta一般般 🙂",
+            "黑色": "马的颜色代表对另一半的印象——在你心中Ta还有提升空间 🌱",
+        },
+    },
+    {
+        "q": "🐎 马正在做什么？",
+        "options": ["安静地站着", "吃草", "欢快奔跑"],
+        "analysis": {
+            "安静地站着": "马的动作代表另一半的个性——Ta是一个很顾家的人 🏡",
+            "吃草": "马的动作代表另一半的个性——Ta是一个很顾家的人 🏡",
+            "欢快奔跑": "马的动作代表另一半的个性——Ta是一个喜欢在外面玩的人 🎈",
+        },
+    },
+    {
+        "q": "🌪️ 突然离马很近的地方刮起了一阵龙卷风。你会怎么做？",
+        "options": ["跑去躲在箱子里", "跑去躲在桥下", "骑上马跑走"],
+        "analysis": {
+            "跑去躲在箱子里": "龙卷风代表生活中的麻烦——遇到麻烦时你会选择自己解决 💪",
+            "跑去躲在桥下": "龙卷风代表生活中的麻烦——遇到麻烦时你会找朋友一起解决 🤝",
+            "骑上马跑走": "龙卷风代表生活中的麻烦——遇到麻烦时你会和伴侣一起面对 💕",
+        },
+    },
+]
+
+# ---------- 破冰测试页渲染（page_state == 'test'） ----------
+if st.session_state.page_state == "test":
+    # 破冰页隐藏侧边栏与聊天输入框，内容居中聚焦
+    st.markdown("""
+    <style>
+    section[data-testid="stSidebar"] {display: none !important;}
+    [data-testid="stChatInput"] {display: none !important;}
+    [data-testid="stBlockContainer"], [data-testid="stAppViewBlockContainer"],
+    .block-container, .main .block-container {
+        padding-top: 8vh !important; max-width: 620px !important; margin: 0 auto !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 随机抽题：题号存入 session_state，防止 rerun 后换题
+    if st.session_state.test_q_idx is None:
+        st.session_state.test_q_idx = random.choice(range(len(FOREST_QUESTIONS)))
+    _q = FOREST_QUESTIONS[st.session_state.test_q_idx]
+
+    st.markdown(
+        '<p style="text-align:center; font-size:1.05rem; color:#7B6B8A; '
+        'margin-bottom:0.3rem; letter-spacing:0.02em;">'
+        '🌲 开启聊天前，来做一道森林微测试吧（仅供趣味破冰）</p>',
+        unsafe_allow_html=True,
+    )
+
+    _choice = st.radio(_q["q"], _q["options"], key="forest_test_choice")
+
+    # 已提交答案：展示解析 + 进入树洞按钮
+    if st.session_state.test_answered:
+        st.success(f"🌿 你的选择：**{_choice}**\n\n📖 {_q['analysis'][_choice]}")
+        st.markdown(
+            '<p style="text-align:center; color:#B8A9C9; font-size:0.72rem;">'
+            '以上解析仅供趣味参考，不代表任何心理评估结论哦 🐾</p>',
+            unsafe_allow_html=True,
+        )
+        if st.button("🐾 进入树洞", type="primary", use_container_width=True):
+            st.session_state.page_state = "chat"
+            st.session_state.test_answered = False
+            st.session_state.test_q_idx = None
+            st.rerun()
+    else:
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            if st.button("完成测试并进入", type="primary", use_container_width=True):
+                st.session_state.test_answered = True
+                st.rerun()
+        with _c2:
+            if st.button("直接跳过", use_container_width=True):
+                st.session_state.page_state = "chat"
+                st.session_state.test_q_idx = None
+                st.rerun()
+
+    st.stop()  # 破冰页不渲染后续聊天界面
+
 # 聊天页两侧氛围装饰：fixed 贴边 + pointer-events:none 点击穿透，每侧4个控制密度
 st.markdown(
     '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span><span>🌱</span><span>🍃</span></div>'
@@ -1189,16 +1391,27 @@ with st.sidebar:
     if _dark:
         st.markdown(_DARK_MODE_CSS, unsafe_allow_html=True)
 
-    # 学生昵称/学号输入：key 绑定 session_state.student_name，输入即实时保存，预警时联动上报
-    st.text_input("👤 你的专属昵称/学号", key="student_name")
-    st.markdown("---")
-
-    # 无感授权提示：绿字显示静默连接校园网
+    # 用户标识展示：有昵称显示昵称，无昵称回退脱敏尾号，保护隐私
+    _phone_tail = st.session_state.phone_num[-4:] if st.session_state.phone_num else "****"
+    _display_name = st.session_state.user_nickname if st.session_state.user_nickname else f"尾号 {_phone_tail}"
     st.markdown(
-        '<span style="color:#27ae60; font-size:0.9rem; font-weight:600;">'
-        '✅ 已静默连接校园网，绝对私密</span>',
+        f'<div style="background:#F0E6F6; border-radius:10px; padding:8px 12px; '
+        f'text-align:center; margin-bottom:8px;">'
+        f'<span style="color:#6C5B7B; font-size:0.9rem; font-weight:600;">'
+        f'� 当前用户：{_display_name}</span></div>',
         unsafe_allow_html=True
     )
+
+    # 修改昵称入口（折叠面板，不占主视觉空间）
+    with st.expander("✏️ 修改我的名字"):
+        _new_nick = st.text_input(
+            "新名字", value=st.session_state.user_nickname, key="nick_input",
+            placeholder="留空则恢复显示尾号", max_chars=12,
+        )
+        if st.button("确认修改", key="nick_btn", use_container_width=True):
+            st.session_state.user_nickname = _new_nick.strip()
+            st.toast("名字已更新 🐾" if _new_nick.strip() else "已恢复为尾号显示 🐾")
+            st.rerun()
     st.markdown("---")
 
     # 顶部标题
@@ -1312,9 +1525,15 @@ with st.sidebar:
         st.session_state.messages = [{"role": "assistant", "content": GREETING}]
         st.rerun()
 
-    # 返回封面按钮：回到封面页（对话历史保留，回来还能接着聊）
-    if st.button("🏠 返回封面", use_container_width=True):
-        st.session_state.entered = False
+    # 退出登录按钮：清空登录状态回到登录页
+    if st.button("🚪 退出登录", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.phone_num = ""
+        st.session_state.captcha_ans = None
+        st.session_state.page_state = "login"
+        st.session_state.test_q_idx = None
+        st.session_state.test_answered = False
+        st.session_state.user_nickname = ""
         st.rerun()
 
     # 管理员登录入口已移至主界面右上角（st.popover），侧边栏不再显示
@@ -1447,7 +1666,7 @@ st.markdown(
 )
 st.markdown(
     f"<p style='text-align: center; color: #8E7CA8; font-size: 0.85rem; margin: 0.2rem 0 0 0;'>"
-    f"👤 当前对话人：{st.session_state.student_name}</p>",
+    f"� 当前用户：{st.session_state.user_nickname if st.session_state.user_nickname else f'尾号 {st.session_state.phone_num[-4:] if st.session_state.phone_num else chr(42)*4}'}</p>",
     unsafe_allow_html=True
 )
 # 开场白气泡上方的淡色情绪标签(心理陪伴氛围)
@@ -1503,7 +1722,7 @@ elif st.session_state.get("crisis_active"):
                 if contact.strip():
                     update_alert_contact(
                         get_session_id(), contact.strip(),
-                        student_id=st.session_state.get("student_id"),
+                        student_id=None,
                         student_phone=contact.strip() if contact.strip().isdigit() else None,
                     )
                     st.session_state.crisis_active = False
@@ -1551,7 +1770,7 @@ if prompt := st.chat_input("跟我说点什么吧..."):
     else:
         is_crisis = False
     if is_crisis:
-        # 【脱敏预警简报】提取触发词，只记录时间/触发词/学号/风险等级，不含聊天原文（数据隔离）
+        # 【脱敏预警简报】提取触发词，只记录时间/触发词/脱敏手机号/风险等级，不含聊天原文（数据隔离）
         cleaned_log = prompt
         for safe in SAFE_PATTERNS:
             cleaned_log = cleaned_log.replace(safe, "")
@@ -1560,8 +1779,10 @@ if prompt := st.chat_input("跟我说点什么吧..."):
         combined_high = HIGH_RISK_KEYWORDS + [w for w in live_h if w not in HIGH_RISK_KEYWORDS]
         combined_amb = AMBIGUOUS_KEYWORDS + [w for w in live_a if w not in AMBIGUOUS_KEYWORDS]
         hit_word = next((kw for kw in combined_high + combined_amb if kw in lowered_log), prompt[:15])
+        _tail = st.session_state.phone_num[-4:] if st.session_state.phone_num else "****"
+        _masked = f"{st.session_state.user_nickname}(尾号{_tail})" if st.session_state.user_nickname else f"用户尾号{_tail}"
         alert_brief = {
-            "学生": st.session_state.student_name,
+            "学生": _masked,
             "风险": "高危",
             "时间": "刚刚",
             "触发词": hit_word,
@@ -1569,10 +1790,10 @@ if prompt := st.chat_input("跟我说点什么吧..."):
         print(f"[脱敏预警简报] {alert_brief}")  # 后台打印（不含聊天原文）
         st.session_state.alert_logs.append(alert_brief)
 
-        # 持久化匿名预警到 alerts.json（只存会话编号/昵称/时间/触发词，绝不存对话原文）
+        # 持久化匿名预警到 alerts.json（只存脱敏标识/会话编号/时间/触发词，绝不存对话原文）
         save_alert({
             "session_id": get_session_id(),
-            "nickname": get_nickname(),
+            "nickname": _masked,
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "risk_level": "高危",
             "trigger_word": hit_word,
