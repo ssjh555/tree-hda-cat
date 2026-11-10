@@ -862,6 +862,8 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False    # 手机号+验证码登录状态
 if "phone_num" not in st.session_state:
     st.session_state.phone_num = ""       # 登录手机号（仅内存，脱敏展示）
+if "is_guest" not in st.session_state:
+    st.session_state.is_guest = False     # 游客模式（无需手机号验证码直接进入）
 if "captcha_ans" not in st.session_state:
     st.session_state.captcha_ans = None   # 当前验证码正确答案
 if "captcha_verified" not in st.session_state:
@@ -983,37 +985,45 @@ if st.query_params.get("view") == "teacher":
 # 学生打开页面一瞬间即自动生成匿名会话编号，完全无感知、无需任何登录
 get_session_id()
 
-# ==================== 阿里云短信验证码（真实发送 + 降级回退） ====================
-# 已配置阿里云密钥 → 发送真实短信；未配置 → 降级模式（对话框内直接显示验证码）
+# ==================== 短信宝验证码（真实发送 + 降级回退） ====================
+# 已配置短信宝账号 → 发送真实短信；未配置 → 降级模式（对话框内直接显示验证码）
 def send_sms_code(phone: str, code: str):
-    """发送6位数字验证码到指定手机号，返回 (是否成功, 提示消息)"""
-    _ak_id = st.secrets.get("ALIYUN_SMS_AK_ID", "")
-    _ak_secret = st.secrets.get("ALIYUN_SMS_AK_SECRET", "")
-    _sign = st.secrets.get("ALIYUN_SMS_SIGN", "")
-    _template = st.secrets.get("ALIYUN_SMS_TEMPLATE", "")
-    # 密钥未配置 → 降级模式，不真正发短信
-    if not (_ak_id and _ak_secret and _sign and _template):
+    """通过短信宝发送6位数字验证码到指定手机号，返回 (是否成功, 提示消息)"""
+    import hashlib
+    import urllib.parse
+    import urllib.request
+    _user = st.secrets.get("SMSBAO_USER", "")
+    _pwd = st.secrets.get("SMSBAO_PASSWORD", "")
+    _sign = st.secrets.get("SMSBAO_SIGN", "")
+    # 账号未配置 → 降级模式，不真正发短信
+    if not (_user and _pwd and _sign):
         return True, "模拟发送"
     try:
-        from alibabacloud_dysmsapi20170525.client import Client
-        from alibabacloud_tea_openapi.models import Config
-        from alibabacloud_dysmsapi20170525.models import SendSmsRequest
-        _config = Config(access_key_id=_ak_id, access_key_secret=_ak_secret)
-        _config.endpoint = "dysmsapi.aliyuncs.com"
-        _client = Client(_config)
-        _resp = _client.send_sms(SendSmsRequest(
-            phone_numbers=phone,
-            sign_name=_sign,
-            template_code=_template,
-            template_param=json.dumps({"code": code}),
-        ))
-        if _resp.body.code == "OK":
+        _md5_pwd = hashlib.md5(_pwd.encode("utf-8")).hexdigest()
+        _content = f"您的验证码为{code}，5分钟内有效，请勿泄露。【{_sign}】"
+        _url = ("https://api.smsbao.com/sms"
+                f"?u={urllib.parse.quote(_user)}"
+                f"&p={_md5_pwd}"
+                f"&m={phone}"
+                f"&c={urllib.parse.quote(_content)}")
+        _req = urllib.request.Request(_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(_req, timeout=10) as _resp:
+            _result = _resp.read().decode("utf-8").strip()
+        if _result == "0":
             return True, "发送成功"
-        return False, _resp.body.message or "短信发送失败"
+        _err_map = {
+            "1": "请求失败", "2": "短信余额不足", "3": "内容含敏感词",
+            "4": "手机号格式错误", "5": "账号密码错误", "6": "请求频率过高",
+            "7": "短信内容为空", "8": "无权限", "9": "账号不存在",
+            "10": "IP黑名单", "11": "账号被禁用", "12": "短信内容过长",
+            "13": "签名不正确", "14": "模板ID不正确", "15": "模板内容为空",
+            "16": "模板不存在", "17": "未知错误",
+        }
+        return False, _err_map.get(_result, f"发送失败(错误码{_result})")
     except Exception as e:
         return False, f"短信服务异常：{e}"
 
-# ==================== 验证码对话框（点击获取验证码后弹出，输入收到的短信验证码） ====================
+
 # 验证码在主脚本中生成并发送，存入 session_state，对话框内交互不重新生成
 @st.dialog("📬 验证码短信")
 def captcha_dialog():
@@ -1034,7 +1044,7 @@ def captcha_dialog():
             st.session_state.captcha_verified = True
             st.rerun()  # 关闭对话框，回到登录页
 
-# ==================== 登录页：手机号 + 数学题验证码无痕登录 ====================
+# ==================== 登录页：手机号 + 短信宝验证码无痕登录 ====================
 if not st.session_state.logged_in:
     # 登录页隐藏侧边栏与聊天输入框 + 封面内容垂直居中（消除下方大片留白）
     st.markdown("""
@@ -1130,24 +1140,16 @@ if not st.session_state.logged_in:
     </style>
     """, unsafe_allow_html=True)
 
-    # 首页两侧装饰：最外缘emoji漂浮 + 内侧内容卡片，左右错开互不冲突
-    # emoji贴最外边（1.4rem），卡片往内移（5.5rem），chat-deco仅封面页渲染
+    # 首页两侧装饰：最外缘emoji漂浮（两侧文本卡片已移除）
+    # emoji贴最外边（1.4rem），chat-deco仅封面页渲染
     st.markdown(
         '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span><span>🌱</span><span>🍃</span><span>☘️</span><span>🍂</span></div>'
         '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span><span>⭐</span><span>☁️</span><span>💫</span><span>🌟</span></div>',
         unsafe_allow_html=True,
     )
 
-    # 登录页欢迎语（紧凑居中 + 装饰点缀）
+    # 登录页欢迎语（紧凑居中 + 装饰点缀，两侧文本卡片已移除）
     st.markdown("""
-    <div class="cover-side cover-side-left">
-        <div class="cover-side-card"><span class="side-card-icon">🌿</span>心事说进树洞，猫咪帮你藏好</div>
-        <div class="cover-side-card"><span class="side-card-icon">🌱</span>树洞里长出新芽，像你一样温柔生长</div>
-    </div>
-    <div class="cover-side cover-side-right">
-        <div class="cover-side-card"><span class="side-card-icon">🌙</span>深夜的树洞，亮着一盏等你的微光</div>
-        <div class="cover-side-card"><span class="side-card-icon">🐾</span>树洞口的猫咪，毛茸茸随时准备好</div>
-    </div>
     <div class="cover-float"><span>✨</span><span>🌙</span><span>☁️</span><span>⭐</span></div>
     <div class="cover-container">
         <div class="cover-paws">🐾 🐱 🐾</div>
@@ -1179,57 +1181,68 @@ if not st.session_state.logged_in:
         unsafe_allow_html=True,
     )
 
-    # 手机号 + 验证码无痕登录表单
+    # 手机号 + 验证码无痕登录表单（收缩进"用户登录"展开栏，点开才显示）
     _, form_col, _ = st.columns([1, 1.2, 1])
     with form_col:
-        st.markdown(
-            '<p style="text-align:center;color:#8E7CA8;font-size:0.85rem;margin:0.3rem 0 0.8rem 0;">'
-            '为了保护你的绝对隐私，请使用手机号无痕登录。</p>',
-            unsafe_allow_html=True,
-        )
-        login_phone = st.text_input("📱 请输入手机号", key="login_phone", placeholder="11位手机号", max_chars=11)
-        # 获取验证码：校验手机号 → 生成6位随机数字 → 调用阿里云短信发送 → 弹出对话框输入
-        if st.button("📬 获取验证码", key="get_captcha_btn", use_container_width=True):
-            _phone = login_phone.strip()
-            if not (_phone.isdigit() and len(_phone) == 11):
-                st.error("请先输入正确的11位手机号哦")
-            else:
-                _code = "".join(random.choices("0123456789", k=6))   # 6位随机数字验证码
-                _ok, _msg = send_sms_code(_phone, _code)
-                if _ok:
-                    st.session_state.captcha_ans = _code
-                    st.session_state.captcha_phone = _phone
-                    st.session_state.captcha_verified = False
-                    st.session_state.captcha_simulated = (_msg == "模拟发送")
-                    captcha_dialog()
+        with st.expander("🔐 用户登录", expanded=False):
+            st.markdown(
+                '<p style="text-align:center;color:#8E7CA8;font-size:0.85rem;margin:0.3rem 0 0.8rem 0;">'
+                '为了保护你的绝对隐私，请使用手机号无痕登录。</p>',
+                unsafe_allow_html=True,
+            )
+            login_phone = st.text_input("📱 请输入手机号", key="login_phone", placeholder="11位手机号", max_chars=11)
+            # 获取验证码：校验手机号 → 生成6位随机数字 → 通过短信宝发送 → 弹出对话框输入
+            if st.button("📬 获取验证码", key="get_captcha_btn", use_container_width=True):
+                _phone = login_phone.strip()
+                if not (_phone.isdigit() and len(_phone) == 11):
+                    st.error("请先输入正确的11位手机号哦")
                 else:
-                    st.error(f"验证码发送失败：{_msg}")
-        # 验证状态提示：通过后显示绿色标记，未通过显示灰色引导
-        if st.session_state.captcha_verified:
-            st.markdown(
-                '<p style="text-align:center;color:#5B8C5A;font-size:0.78rem;margin:-0.2rem 0 0.4rem 0;">'
-                '✅ 验证码已验证</p>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<p style="text-align:center;color:#B8A9C9;font-size:0.72rem;margin:-0.2rem 0 0.4rem 0;">'
-                '点击上方按钮获取验证码</p>',
-                unsafe_allow_html=True,
-            )
-        if st.button("🐾 验证并进入", key="login_submit_btn", use_container_width=True, type="primary"):
-            _phone = login_phone.strip()
-            if not (_phone.isdigit() and len(_phone) == 11):
-                st.error("请输入正确的11位手机号哦")
-            elif not st.session_state.captcha_verified:
-                st.error("请先点击「获取验证码」完成验证")
-            elif _phone != st.session_state.captcha_phone:
-                st.error("手机号与验证码发送号码不一致，请重新获取验证码")
+                    _code = "".join(random.choices("0123456789", k=6))   # 6位随机数字验证码
+                    _ok, _msg = send_sms_code(_phone, _code)
+                    if _ok:
+                        st.session_state.captcha_ans = _code
+                        st.session_state.captcha_phone = _phone
+                        st.session_state.captcha_verified = False
+                        st.session_state.captcha_simulated = (_msg == "模拟发送")
+                        captcha_dialog()
+                    else:
+                        st.error(f"验证码发送失败：{_msg}")
+            # 验证状态提示：通过后显示绿色标记，未通过显示灰色引导
+            if st.session_state.captcha_verified:
+                st.markdown(
+                    '<p style="text-align:center;color:#5B8C5A;font-size:0.78rem;margin:-0.2rem 0 0.4rem 0;">'
+                    '✅ 验证码已验证</p>',
+                    unsafe_allow_html=True,
+                )
             else:
-                st.session_state.logged_in = True
-                st.session_state.phone_num = _phone
-                st.session_state.page_state = "test"   # 登录成功 → 进入森林微测试破冰
-                st.rerun()
+                st.markdown(
+                    '<p style="text-align:center;color:#B8A9C9;font-size:0.72rem;margin:-0.2rem 0 0.4rem 0;">'
+                    '点击上方按钮获取验证码</p>',
+                    unsafe_allow_html=True,
+                )
+            if st.button("🐾 验证并进入", key="login_submit_btn", use_container_width=True, type="primary"):
+                _phone = login_phone.strip()
+                if not (_phone.isdigit() and len(_phone) == 11):
+                    st.error("请输入正确的11位手机号哦")
+                elif not st.session_state.captcha_verified:
+                    st.error("请先点击「获取验证码」完成验证")
+                elif _phone != st.session_state.captcha_phone:
+                    st.error("手机号与验证码发送号码不一致，请重新获取验证码")
+                else:
+                    st.session_state.logged_in = True
+                    st.session_state.phone_num = _phone
+                    st.session_state.page_state = "test"   # 登录成功 → 进入森林微测试破冰
+                    st.rerun()
+
+    # 游客模式：无需手机号和验证码，直接进入（独立于用户登录栏之外）
+    _, guest_col, _ = st.columns([1, 1.2, 1])
+    with guest_col:
+        if st.button("🐱 游客模式直接进入", key="guest_login_btn", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.phone_num = ""
+            st.session_state.is_guest = True
+            st.session_state.page_state = "test"
+            st.rerun()
 
     # 老师登录入口（独立于用户登录）
     st.markdown("<div style='text-align:center; margin-top:0.8rem;'></div>", unsafe_allow_html=True)
@@ -1480,15 +1493,19 @@ with st.sidebar:
     if _dark:
         st.markdown(_DARK_MODE_CSS, unsafe_allow_html=True)
 
-    # 脱敏手机号展示：仅显示尾号4位，保护隐私
-    _phone_tail = st.session_state.phone_num[-4:] if st.session_state.phone_num else "****"
-    st.markdown(
-        f'<div style="background:#F0E6F6; border-radius:10px; padding:8px 12px; '
-        f'text-align:center; margin-bottom:8px;">'
-        f'<span style="color:#6C5B7B; font-size:0.9rem; font-weight:600;">'
-        f'当前用户：尾号 {_phone_tail}</span></div>',
-        unsafe_allow_html=True
-    )
+    # 用户信息：默认收缩，点开才显示手机号等登录信息（隐私优先，不直接暴露）
+    _phone = st.session_state.phone_num
+    _masked_phone = _phone[:3] + "****" + _phone[-4:] if len(_phone) == 11 else "****"
+    with st.popover("👤 用户信息 · 点击展开", use_container_width=True):
+        st.markdown(
+            '<div style="text-align:center; color:#8E7CA8; font-size:0.75rem; '
+            'margin-bottom:0.5rem;">🔒 以下信息仅你可见</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"**📱 手机号**:{_masked_phone}")
+        st.markdown(f"**🐱 匿名昵称**:{get_nickname()}")
+        st.markdown(f"**🔒 会话编号**:`{get_session_id()}`")
+        st.markdown("**✅ 登录状态**:已登录" if not st.session_state.is_guest else "**🐾 登录状态**:游客模式")
     st.markdown("---")
 
     # 顶部标题
@@ -1606,6 +1623,7 @@ with st.sidebar:
     if st.button("🚪 退出登录", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.phone_num = ""
+        st.session_state.is_guest = False
         st.session_state.captcha_ans = None
         st.session_state.captcha_verified = False
         st.session_state.captcha_phone = ""
@@ -1743,11 +1761,21 @@ st.markdown(
     "background: linear-gradient(to right, #B8D4E3, transparent);'></div>",
     unsafe_allow_html=True
 )
-st.markdown(
-    f"<p style='text-align: center; color: #8E7CA8; font-size: 0.85rem; margin: 0.2rem 0 0 0;'>"
-    f"📱 当前用户：尾号 {st.session_state.phone_num[-4:] if st.session_state.phone_num else chr(42)*4}</p>",
-    unsafe_allow_html=True
-)
+# 用户信息入口：手机号默认收缩，点开查看手机号等登录信息（隐私优先）
+_, _user_col, _ = st.columns([1, 0.5, 1])
+with _user_col:
+    _phone = st.session_state.phone_num
+    _masked_phone = _phone[:3] + "****" + _phone[-4:] if len(_phone) == 11 else "****"
+    with st.popover("👤 用户信息", use_container_width=True):
+        st.markdown(
+            '<div style="text-align:center; color:#8E7CA8; font-size:0.75rem; '
+            'margin-bottom:0.5rem;">🔒 以下信息仅你可见</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"**📱 手机号**:{_masked_phone}")
+        st.markdown(f"**🐱 匿名昵称**:{get_nickname()}")
+        st.markdown(f"**🔒 会话编号**:`{get_session_id()}`")
+        st.markdown("**✅ 登录状态**:已登录" if not st.session_state.is_guest else "**🐾 登录状态**:游客模式")
 # 开场白气泡上方的淡色情绪标签(心理陪伴氛围)
 st.markdown(
     "<p style='text-align: center; color: #9BB5A8; font-size: 0.75rem; "
