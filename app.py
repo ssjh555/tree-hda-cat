@@ -375,7 +375,14 @@ st.markdown("""
         repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(120, 100, 80, 0.012) 3px, rgba(120, 100, 80, 0.012) 4px),
         repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(120, 100, 80, 0.010) 3px, rgba(120, 100, 80, 0.010) 4px),
         linear-gradient(135deg, #F7F2EA 0%, #E8F5EE 100%) !important;
-    font-family: 'Quicksand', 'Comic Sans MS', '楷体', 'Microsoft YaHei', sans-serif;
+    font-family: 'Quicksand', 'Comic Sans MS', '楷体', 'Microsoft YaHei', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
+}
+/* 全局按钮字体：确保 emoji 在所有按钮中正常渲染（Windows 缺 Segoe UI Emoji 会显示方块） */
+[data-testid="stButton"] > button,
+.stMainBlockContainer button,
+[data-testid="stAppViewBlockContainer"] button,
+section[data-testid="stSidebar"] button {
+    font-family: 'Quicksand', 'Microsoft YaHei', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
 }
 
 /* 隐藏 Streamlit 默认元素：右上角菜单、页脚 */
@@ -857,16 +864,20 @@ if "phone_num" not in st.session_state:
     st.session_state.phone_num = ""       # 登录手机号（仅内存，脱敏展示）
 if "captcha_ans" not in st.session_state:
     st.session_state.captcha_ans = None   # 当前验证码正确答案
+if "captcha_verified" not in st.session_state:
+    st.session_state.captcha_verified = False  # 验证码对话框答题是否通过
+if "captcha_phone" not in st.session_state:
+    st.session_state.captcha_phone = ""        # 验证码发送目标手机号（防改号复用验证码）
+if "captcha_simulated" not in st.session_state:
+    st.session_state.captcha_simulated = False # 是否降级模式（密钥未配置时直接显示验证码）
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False     # 管理员登录状态，默认学生端（密码保护）
 if "page_state" not in st.session_state:
     st.session_state.page_state = "login"  # 页面流转：login → test（破冰） → chat
 if "test_q_idx" not in st.session_state:
-    st.session_state.test_q_idx = None     # 破冰测试随机抽中的题号
+    st.session_state.test_q_idx = None     # 破冰测试随机抽中的题号列表（5题）
 if "test_answered" not in st.session_state:
     st.session_state.test_answered = False # 破冰测试是否已提交答案
-if "user_nickname" not in st.session_state:
-    st.session_state.user_nickname = ""     # 自定义昵称（可选，空则展示脱敏尾号）
 
 # ==================== 管理员端视图：辅导员监控后台（密码保护） ====================
 # 仅当 is_admin 为 True 时进入；密码验证在主界面右上角的 popover 登录入口完成
@@ -910,7 +921,7 @@ if st.query_params.get("view") == "teacher":
     try:
         TEACHER_KEY = st.secrets["TEACHER_KEY"]
     except Exception:
-        TEACHER_KEY = "树洞123456"
+        TEACHER_KEY = "sd123456"
     if "teacher_authed" not in st.session_state:
         st.session_state.teacher_authed = False
     if not st.session_state.teacher_authed:
@@ -972,6 +983,57 @@ if st.query_params.get("view") == "teacher":
 # 学生打开页面一瞬间即自动生成匿名会话编号，完全无感知、无需任何登录
 get_session_id()
 
+# ==================== 阿里云短信验证码（真实发送 + 降级回退） ====================
+# 已配置阿里云密钥 → 发送真实短信；未配置 → 降级模式（对话框内直接显示验证码）
+def send_sms_code(phone: str, code: str):
+    """发送6位数字验证码到指定手机号，返回 (是否成功, 提示消息)"""
+    _ak_id = st.secrets.get("ALIYUN_SMS_AK_ID", "")
+    _ak_secret = st.secrets.get("ALIYUN_SMS_AK_SECRET", "")
+    _sign = st.secrets.get("ALIYUN_SMS_SIGN", "")
+    _template = st.secrets.get("ALIYUN_SMS_TEMPLATE", "")
+    # 密钥未配置 → 降级模式，不真正发短信
+    if not (_ak_id and _ak_secret and _sign and _template):
+        return True, "模拟发送"
+    try:
+        from alibabacloud_dysmsapi20170525.client import Client
+        from alibabacloud_tea_openapi.models import Config
+        from alibabacloud_dysmsapi20170525.models import SendSmsRequest
+        _config = Config(access_key_id=_ak_id, access_key_secret=_ak_secret)
+        _config.endpoint = "dysmsapi.aliyuncs.com"
+        _client = Client(_config)
+        _resp = _client.send_sms(SendSmsRequest(
+            phone_numbers=phone,
+            sign_name=_sign,
+            template_code=_template,
+            template_param=json.dumps({"code": code}),
+        ))
+        if _resp.body.code == "OK":
+            return True, "发送成功"
+        return False, _resp.body.message or "短信发送失败"
+    except Exception as e:
+        return False, f"短信服务异常：{e}"
+
+# ==================== 验证码对话框（点击获取验证码后弹出，输入收到的短信验证码） ====================
+# 验证码在主脚本中生成并发送，存入 session_state，对话框内交互不重新生成
+@st.dialog("📬 验证码短信")
+def captcha_dialog():
+    _tail = st.session_state.captcha_phone[-4:] if st.session_state.captcha_phone else "****"
+    if st.session_state.captcha_simulated:
+        # 降级模式：密钥未配置，直接在对话框内显示验证码（仅供开发调试）
+        st.warning(f"【模拟短信】短信服务未配置，你的验证码是：**{st.session_state.captcha_ans}**")
+    else:
+        st.info(f"验证码已发送至尾号 **{_tail}** 的手机，请输入收到的6位验证码。")
+    _ans = st.text_input("输入6位验证码", key="dialog_captcha_input", placeholder="6位数字验证码", max_chars=6)
+    if st.button("✅ 确认验证", type="primary", use_container_width=True):
+        _a = _ans.strip()
+        if not (_a.isdigit() and len(_a) == 6):
+            st.error("请输入6位数字验证码")
+        elif _a != st.session_state.captcha_ans:
+            st.error("验证码不正确，请重新输入")
+        else:
+            st.session_state.captcha_verified = True
+            st.rerun()  # 关闭对话框，回到登录页
+
 # ==================== 登录页：手机号 + 数学题验证码无痕登录 ====================
 if not st.session_state.logged_in:
     # 登录页隐藏侧边栏与聊天输入框 + 封面内容垂直居中（消除下方大片留白）
@@ -996,6 +1058,7 @@ if not st.session_state.logged_in:
         border-radius: 25px !important;
         font-size: 0.92rem !important;
         font-weight: 500 !important;
+        font-family: 'Quicksand', 'Microsoft YaHei', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
         box-shadow: none !important;
     }
     [data-testid="stButton"] > button:not([kind="primary"]):hover {
@@ -1078,12 +1141,12 @@ if not st.session_state.logged_in:
     # 登录页欢迎语（紧凑居中 + 装饰点缀）
     st.markdown("""
     <div class="cover-side cover-side-left">
-        <div class="cover-side-card"><span class="side-card-icon">�</span>心事说进树洞，猫咪帮你藏好</div>
-        <div class="cover-side-card"><span class="side-card-icon">�</span>树洞里长出新芽，像你一样温柔生长</div>
+        <div class="cover-side-card"><span class="side-card-icon">🌿</span>心事说进树洞，猫咪帮你藏好</div>
+        <div class="cover-side-card"><span class="side-card-icon">🌱</span>树洞里长出新芽，像你一样温柔生长</div>
     </div>
     <div class="cover-side cover-side-right">
         <div class="cover-side-card"><span class="side-card-icon">🌙</span>深夜的树洞，亮着一盏等你的微光</div>
-        <div class="cover-side-card"><span class="side-card-icon">�</span>树洞口的猫咪，毛茸茸随时准备好</div>
+        <div class="cover-side-card"><span class="side-card-icon">🐾</span>树洞口的猫咪，毛茸茸随时准备好</div>
     </div>
     <div class="cover-float"><span>✨</span><span>🌙</span><span>☁️</span><span>⭐</span></div>
     <div class="cover-container">
@@ -1099,7 +1162,7 @@ if not st.session_state.logged_in:
         <div class="cover-features">
             <div class="cover-feature">✨ 匿名安全</div>
             <div class="cover-feature">🐾 温柔陪伴</div>
-            <div class="cover-feature">� 内容不留存</div>
+            <div class="cover-feature">🔒 内容不留存</div>
         </div>
         <p class="cover-quote">"愿每一份心事，都能被温柔接住"</p>
     </div>
@@ -1125,27 +1188,46 @@ if not st.session_state.logged_in:
             unsafe_allow_html=True,
         )
         login_phone = st.text_input("📱 请输入手机号", key="login_phone", placeholder="11位手机号", max_chars=11)
-        login_nickname = st.text_input("🐾 给自己起个名字（可选）", key="login_nickname", placeholder="小猫会这样叫你哦", max_chars=12)
-        login_captcha = st.text_input("🔐 请输入验证码", key="login_captcha", placeholder="点击下方获取验证码")
-        if st.button("� 获取验证码", use_container_width=True):
-            _a = random.randint(1, 9)
-            _b = random.randint(1, 9)
-            st.session_state.captcha_ans = _a + _b
-            st.session_state.captcha_q = f"{_a} + {_b}"
-            st.success(f"模拟验证码短信：请回答 {_a} + {_b} = ? 以完成验证。")
-        if st.button("🐾 验证并进入", use_container_width=True, type="primary"):
+        # 获取验证码：校验手机号 → 生成6位随机数字 → 调用阿里云短信发送 → 弹出对话框输入
+        if st.button("📬 获取验证码", key="get_captcha_btn", use_container_width=True):
             _phone = login_phone.strip()
-            _captcha = login_captcha.strip()
+            if not (_phone.isdigit() and len(_phone) == 11):
+                st.error("请先输入正确的11位手机号哦")
+            else:
+                _code = "".join(random.choices("0123456789", k=6))   # 6位随机数字验证码
+                _ok, _msg = send_sms_code(_phone, _code)
+                if _ok:
+                    st.session_state.captcha_ans = _code
+                    st.session_state.captcha_phone = _phone
+                    st.session_state.captcha_verified = False
+                    st.session_state.captcha_simulated = (_msg == "模拟发送")
+                    captcha_dialog()
+                else:
+                    st.error(f"验证码发送失败：{_msg}")
+        # 验证状态提示：通过后显示绿色标记，未通过显示灰色引导
+        if st.session_state.captcha_verified:
+            st.markdown(
+                '<p style="text-align:center;color:#5B8C5A;font-size:0.78rem;margin:-0.2rem 0 0.4rem 0;">'
+                '✅ 验证码已验证</p>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<p style="text-align:center;color:#B8A9C9;font-size:0.72rem;margin:-0.2rem 0 0.4rem 0;">'
+                '点击上方按钮获取验证码</p>',
+                unsafe_allow_html=True,
+            )
+        if st.button("🐾 验证并进入", key="login_submit_btn", use_container_width=True, type="primary"):
+            _phone = login_phone.strip()
             if not (_phone.isdigit() and len(_phone) == 11):
                 st.error("请输入正确的11位手机号哦")
-            elif st.session_state.captcha_ans is None:
-                st.error("请先点击「获取验证码」")
-            elif not _captcha.isdigit() or int(_captcha) != st.session_state.captcha_ans:
-                st.error("验证码答案不正确，请重新回答")
+            elif not st.session_state.captcha_verified:
+                st.error("请先点击「获取验证码」完成验证")
+            elif _phone != st.session_state.captcha_phone:
+                st.error("手机号与验证码发送号码不一致，请重新获取验证码")
             else:
                 st.session_state.logged_in = True
                 st.session_state.phone_num = _phone
-                st.session_state.user_nickname = login_nickname.strip()  # 可选昵称，空则回退脱敏尾号
                 st.session_state.page_state = "test"   # 登录成功 → 进入森林微测试破冰
                 st.rerun()
 
@@ -1336,23 +1418,30 @@ if st.session_state.page_state == "test":
     </style>
     """, unsafe_allow_html=True)
 
-    # 随机抽题：题号存入 session_state，防止 rerun 后换题
+    # 随机抽5题：题号列表存入 session_state，防止 rerun 后换题
     if st.session_state.test_q_idx is None:
-        st.session_state.test_q_idx = random.choice(range(len(FOREST_QUESTIONS)))
-    _q = FOREST_QUESTIONS[st.session_state.test_q_idx]
+        st.session_state.test_q_idx = random.sample(range(len(FOREST_QUESTIONS)), 5)
+    _qs = [FOREST_QUESTIONS[i] for i in st.session_state.test_q_idx]
 
     st.markdown(
         '<p style="text-align:center; font-size:1.05rem; color:#7B6B8A; '
         'margin-bottom:0.3rem; letter-spacing:0.02em;">'
-        '🌲 开启聊天前，来做一道森林微测试吧（仅供趣味破冰）</p>',
+        '🌲 开启聊天前，来做五道森林微测试吧（仅供趣味破冰）</p>',
         unsafe_allow_html=True,
     )
 
-    _choice = st.radio(_q["q"], _q["options"], key="forest_test_choice")
+    # 渲染5道题，每题独立 radio + 独立 key
+    _choices = []
+    for _i, _q in enumerate(_qs):
+        _c = st.radio(_q["q"], _q["options"], key=f"forest_test_choice_{_i}")
+        _choices.append(_c)
 
-    # 已提交答案：展示解析 + 进入树洞按钮
+    # 已提交答案：逐题展示解析 + 进入树洞按钮
     if st.session_state.test_answered:
-        st.success(f"🌿 你的选择：**{_choice}**\n\n📖 {_q['analysis'][_choice]}")
+        st.markdown("---")
+        st.markdown("#### 📖 你的森林小报告")
+        for _i, (_q, _c) in enumerate(zip(_qs, _choices)):
+            st.success(f"{_i+1}. 你的选择：**{_c}**\n\n{_q['analysis'][_c]}")
         st.markdown(
             '<p style="text-align:center; color:#B8A9C9; font-size:0.72rem;">'
             '以上解析仅供趣味参考，不代表任何心理评估结论哦 🐾</p>',
@@ -1391,27 +1480,15 @@ with st.sidebar:
     if _dark:
         st.markdown(_DARK_MODE_CSS, unsafe_allow_html=True)
 
-    # 用户标识展示：有昵称显示昵称，无昵称回退脱敏尾号，保护隐私
+    # 脱敏手机号展示：仅显示尾号4位，保护隐私
     _phone_tail = st.session_state.phone_num[-4:] if st.session_state.phone_num else "****"
-    _display_name = st.session_state.user_nickname if st.session_state.user_nickname else f"尾号 {_phone_tail}"
     st.markdown(
         f'<div style="background:#F0E6F6; border-radius:10px; padding:8px 12px; '
         f'text-align:center; margin-bottom:8px;">'
         f'<span style="color:#6C5B7B; font-size:0.9rem; font-weight:600;">'
-        f'� 当前用户：{_display_name}</span></div>',
+        f'当前用户：尾号 {_phone_tail}</span></div>',
         unsafe_allow_html=True
     )
-
-    # 修改昵称入口（折叠面板，不占主视觉空间）
-    with st.expander("✏️ 修改我的名字"):
-        _new_nick = st.text_input(
-            "新名字", value=st.session_state.user_nickname, key="nick_input",
-            placeholder="留空则恢复显示尾号", max_chars=12,
-        )
-        if st.button("确认修改", key="nick_btn", use_container_width=True):
-            st.session_state.user_nickname = _new_nick.strip()
-            st.toast("名字已更新 🐾" if _new_nick.strip() else "已恢复为尾号显示 🐾")
-            st.rerun()
     st.markdown("---")
 
     # 顶部标题
@@ -1530,10 +1607,12 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.session_state.phone_num = ""
         st.session_state.captcha_ans = None
+        st.session_state.captcha_verified = False
+        st.session_state.captcha_phone = ""
+        st.session_state.captcha_simulated = False
         st.session_state.page_state = "login"
         st.session_state.test_q_idx = None
         st.session_state.test_answered = False
-        st.session_state.user_nickname = ""
         st.rerun()
 
     # 管理员登录入口已移至主界面右上角（st.popover），侧边栏不再显示
@@ -1666,7 +1745,7 @@ st.markdown(
 )
 st.markdown(
     f"<p style='text-align: center; color: #8E7CA8; font-size: 0.85rem; margin: 0.2rem 0 0 0;'>"
-    f"� 当前用户：{st.session_state.user_nickname if st.session_state.user_nickname else f'尾号 {st.session_state.phone_num[-4:] if st.session_state.phone_num else chr(42)*4}'}</p>",
+    f"📱 当前用户：尾号 {st.session_state.phone_num[-4:] if st.session_state.phone_num else chr(42)*4}</p>",
     unsafe_allow_html=True
 )
 # 开场白气泡上方的淡色情绪标签(心理陪伴氛围)
@@ -1779,8 +1858,7 @@ if prompt := st.chat_input("跟我说点什么吧..."):
         combined_high = HIGH_RISK_KEYWORDS + [w for w in live_h if w not in HIGH_RISK_KEYWORDS]
         combined_amb = AMBIGUOUS_KEYWORDS + [w for w in live_a if w not in AMBIGUOUS_KEYWORDS]
         hit_word = next((kw for kw in combined_high + combined_amb if kw in lowered_log), prompt[:15])
-        _tail = st.session_state.phone_num[-4:] if st.session_state.phone_num else "****"
-        _masked = f"{st.session_state.user_nickname}(尾号{_tail})" if st.session_state.user_nickname else f"用户尾号{_tail}"
+        _masked = f"用户尾号{st.session_state.phone_num[-4:]}" if st.session_state.phone_num else "匿名用户"
         alert_brief = {
             "学生": _masked,
             "风险": "高危",
