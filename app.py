@@ -864,6 +864,12 @@ if "phone_num" not in st.session_state:
     st.session_state.phone_num = ""       # 登录手机号（仅内存，脱敏展示）
 if "is_guest" not in st.session_state:
     st.session_state.is_guest = False     # 游客模式（无需手机号验证码直接进入）
+if "voice_enabled" not in st.session_state:
+    st.session_state.voice_enabled = False # 语音播报开关（AI回复自动朗读）
+if "voice_input_text" not in st.session_state:
+    st.session_state.voice_input_text = "" # 语音识别出的文字（待发送）
+if "voice_spoken_idx" not in st.session_state:
+    st.session_state.voice_spoken_idx = -1 # 已播报的最新消息索引（防重复朗读）
 if "captcha_ans" not in st.session_state:
     st.session_state.captcha_ans = None   # 当前验证码正确答案
 if "captcha_verified" not in st.session_state:
@@ -1024,6 +1030,131 @@ def send_sms_code(phone: str, code: str):
         return False, f"短信服务异常：{e}"
 
 
+# ==================== 语音系统（浏览器原生 Web Speech API，免费无需额外服务） ====================
+# 语音输入：webkitSpeechRecognition 识别中文语音 → 自动填入聊天输入框
+# 语音播报：speechSynthesis 将 AI 回复朗读出来（温柔女声）
+
+def voice_input_component():
+    """渲染语音输入按钮：点击说话，识别结果自动填入聊天输入框"""
+    import streamlit.components.v1 as components
+    components.html("""
+<div style="text-align:center; margin:0 auto 6px auto;">
+    <button id="vi-btn" style="
+        background:linear-gradient(135deg,#8E7CA8,#A89AC0); color:white; border:none;
+        border-radius:22px; padding:7px 22px; font-size:0.82rem; cursor:pointer;
+        box-shadow:0 2px 8px rgba(142,124,168,0.3); transition:all 0.3s;
+    ">🎤 说话</button>
+    <span id="vi-status" style="color:#B8A9C9; font-size:0.72rem; margin-left:10px;"></span>
+</div>
+<script>
+(function(){
+    const btn = document.getElementById('vi-btn');
+    const status = document.getElementById('vi-status');
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        btn.textContent = '🎤 浏览器不支持语音';
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        return;
+    }
+    const rec = new SR();
+    rec.lang = 'zh-CN';
+    rec.continuous = false;
+    rec.interimResults = false;
+    let listening = false;
+
+    btn.addEventListener('click', function(){
+        if (listening) { rec.stop(); return; }
+        try {
+            rec.start();
+            listening = true;
+            btn.textContent = '🔴 正在聆听…点击停止';
+            btn.style.background = 'linear-gradient(135deg,#FF6B6B,#FF8E8E)';
+            status.textContent = '请说话，说完自动停止';
+        } catch(e) {}
+    });
+
+    rec.onresult = function(e){
+        const text = e.results[0][0].transcript;
+        status.textContent = '✅ 识别到：' + text;
+        // 跨 iframe 写入父页面 Streamlit 聊天输入框
+        const doc = window.parent.document;
+        const ta = doc.querySelector('[data-testid="stChatInput"] textarea');
+        if (ta) {
+            const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype, 'value').set;
+            setter.call(ta, text);
+            ta.dispatchEvent(new Event('input', {bubbles:true}));
+        }
+    };
+
+    rec.onend = function(){
+        listening = false;
+        btn.textContent = '🎤 说话';
+        btn.style.background = 'linear-gradient(135deg,#8E7CA8,#A89AC0)';
+    };
+
+    rec.onerror = function(e){
+        listening = false;
+        btn.textContent = '🎤 说话';
+        btn.style.background = 'linear-gradient(135deg,#8E7CA8,#A89AC0)';
+        if (e.error === 'not-allowed') status.textContent = '⚠ 请允许麦克风权限';
+        else if (e.error === 'no-speech') status.textContent = '没听清，请再试一次';
+    };
+})();
+</script>
+""", height=50)
+
+
+def voice_output_component(text):
+    """渲染语音播报组件：用浏览器原生 speechSynthesis 朗读文本（温柔中文女声）
+    注意：使用 window.parent.speechSynthesis，确保语音在主页面上下文中运行，
+    这样退出登录后 voice_stop_component 才能跨组件停止播报。"""
+    import json as _json
+    import streamlit.components.v1 as components
+    _safe = _json.dumps(text)
+    components.html(f"""
+<div style="display:none;"></div>
+<script>
+(function(){{
+    const w = window.parent;
+    const synth = w.speechSynthesis;
+    if (!synth) return;
+    synth.cancel();
+    const u = new w.SpeechSynthesisUtterance({_safe});
+    u.lang = 'zh-CN';
+    u.rate = 0.92;
+    u.pitch = 1.08;
+    u.volume = 1.0;
+    // 优先选择中文女声
+    function pickVoice(){{
+        const vs = synth.getVoices();
+        const zh = vs.filter(v => v.lang && v.lang.startsWith('zh'));
+        const female = zh.find(v => /female|女|xiaoxiao|yaoyao|huihui|tingting/i.test(v.name));
+        u.voice = female || zh[0] || null;
+    }}
+    pickVoice();
+    if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoice;
+    synth.speak(u);
+}})();
+</script>
+""", height=1)
+
+
+def voice_stop_component():
+    """渲染语音停止组件：停止主页面上下文中正在进行的语音播报（退出登录/返回主页时调用）"""
+    import streamlit.components.v1 as components
+    components.html("""
+<div style="display:none;"></div>
+<script>
+(function(){
+    const w = window.parent;
+    if (w.speechSynthesis) w.speechSynthesis.cancel();
+})();
+</script>
+""", height=1)
+
+
 # 验证码在主脚本中生成并发送，存入 session_state，对话框内交互不重新生成
 @st.dialog("📬 验证码短信")
 def captcha_dialog():
@@ -1046,6 +1177,8 @@ def captcha_dialog():
 
 # ==================== 登录页：手机号 + 短信宝验证码无痕登录 ====================
 if not st.session_state.logged_in:
+    # 返回主页面时停止语音播报（防止退出登录后语音仍在朗读）
+    voice_stop_component()
     # 登录页隐藏侧边栏与聊天输入框 + 封面内容垂直居中（消除下方大片留白）
     st.markdown("""
     <style>
@@ -1493,6 +1626,11 @@ with st.sidebar:
     if _dark:
         st.markdown(_DARK_MODE_CSS, unsafe_allow_html=True)
 
+    # 语音播报开关（AI回复自动朗读，温柔女声陪伴）
+    _voice_on = st.toggle("🔊 语音播报", key="voice_enabled", help="开启后AI回复自动朗读出来")
+    if not _voice_on:
+        voice_stop_component()   # 关闭开关时立即停止当前朗读
+
     # 用户信息：默认收缩，点开才显示手机号等登录信息（隐私优先，不直接暴露）
     _phone = st.session_state.phone_num
     _masked_phone = _phone[:3] + "****" + _phone[-4:] if len(_phone) == 11 else "****"
@@ -1631,6 +1769,7 @@ with st.sidebar:
         st.session_state.page_state = "login"
         st.session_state.test_q_idx = None
         st.session_state.test_answered = False
+        st.session_state.voice_spoken_idx = -1   # 重置播报索引，防止重新登录后朗读旧消息
         st.rerun()
 
     # 管理员登录入口已移至主界面右上角（st.popover），侧边栏不再显示
@@ -1811,6 +1950,14 @@ for message in st.session_state.messages:
             )
         st.markdown(message["content"])
 
+# 语音播报：检测到新AI回复且开关开启时自动朗读（只播最新一条，不重复播报）
+if st.session_state.voice_enabled and st.session_state.messages:
+    _last_idx = len(st.session_state.messages) - 1
+    _last_msg = st.session_state.messages[-1]
+    if _last_msg["role"] == "assistant" and st.session_state.voice_spoken_idx != _last_idx:
+        st.session_state.voice_spoken_idx = _last_idx
+        voice_output_component(_last_msg["content"])
+
 # 危机后自愿联系区域：危机触发后让学生自愿决定是否被联系（数据隔离，仅存联系方式）
 if st.session_state.get("contact_submitted"):
     st.success("💌 已经收到啦，老师会尽快联系你。猫咪一直在这里陪着你~🐾")
@@ -1858,6 +2005,9 @@ else:
                 st.session_state.messages.append({"role": "user", "content": q["label"], "emotion": btn_emotion})
                 st.session_state.messages.append({"role": "assistant", "content": q["reply"]})
                 st.rerun()
+
+# 语音输入按钮（浏览器原生语音识别，点击说话自动填入输入框）
+voice_input_component()
 
 # 接收用户输入
 if prompt := st.chat_input("跟我说点什么吧..."):
