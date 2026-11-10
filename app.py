@@ -1035,75 +1035,79 @@ def send_sms_code(phone: str, code: str):
 # 语音播报：speechSynthesis 将 AI 回复朗读出来（温柔女声）
 
 def voice_input_component():
-    """渲染语音输入按钮：点击说话，识别结果自动填入聊天输入框"""
+    """麦克风按钮贴在聊天输入栏右侧（豆包风格：输入框内右下角，紧贴发送键）
+    通过 JS 在父页面 body 上创建 fixed 定位按钮，不受 Streamlit 重渲染影响。"""
     import streamlit.components.v1 as components
     components.html("""
-<div style="text-align:center; margin:0 auto 6px auto;">
-    <button id="vi-btn" style="
-        background:linear-gradient(135deg,#8E7CA8,#A89AC0); color:white; border:none;
-        border-radius:22px; padding:7px 22px; font-size:0.82rem; cursor:pointer;
-        box-shadow:0 2px 8px rgba(142,124,168,0.3); transition:all 0.3s;
-    ">🎤 说话</button>
-    <span id="vi-status" style="color:#B8A9C9; font-size:0.72rem; margin-left:10px;"></span>
-</div>
+<div style="display:none;"></div>
 <script>
 (function(){
-    const btn = document.getElementById('vi-btn');
-    const status = document.getElementById('vi-status');
+    const doc = window.parent.document;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-        btn.textContent = '🎤 浏览器不支持语音';
-        btn.disabled = true;
-        btn.style.opacity = '0.5';
-        return;
-    }
-    const rec = new SR();
-    rec.lang = 'zh-CN';
-    rec.continuous = false;
-    rec.interimResults = false;
+    let rec = null;
     let listening = false;
 
-    btn.addEventListener('click', function(){
-        if (listening) { rec.stop(); return; }
-        try {
-            rec.start();
-            listening = true;
-            btn.textContent = '🔴 正在聆听…点击停止';
-            btn.style.background = 'linear-gradient(135deg,#FF6B6B,#FF8E8E)';
-            status.textContent = '请说话，说完自动停止';
-        } catch(e) {}
-    });
+    function createBtn(){
+        if (doc.getElementById('vi-mic-btn')) return;
+        const btn = doc.createElement('button');
+        btn.id = 'vi-mic-btn';
+        btn.type = 'button';
+        btn.title = '点击说话，识别后自动填入';
+        btn.textContent = '🎤';
+        btn.style.cssText = [
+            'position:fixed','bottom:24px','right:118px','z-index:999999',
+            'background:transparent','border:none','cursor:pointer',
+            'font-size:1.25rem','padding:4px 6px','line-height:1.4',
+            'opacity:0.45','transition:all 0.25s'
+        ].join(';');
+        btn.addEventListener('mouseenter', function(){ btn.style.opacity='1'; });
+        btn.addEventListener('mouseleave', function(){ if(!listening) btn.style.opacity='0.45'; });
+        btn.addEventListener('click', function(e){
+            e.preventDefault(); e.stopPropagation();
+            if (!SR) { alert('当前浏览器不支持语音输入，建议使用 Chrome 或 Edge'); return; }
+            if (listening) { if (rec) rec.stop(); return; }
+            try {
+                rec = new SR();
+                rec.lang = 'zh-CN';
+                rec.continuous = false;
+                rec.interimResults = false;
+                rec.onresult = function(ev){
+                    const text = ev.results[0][0].transcript;
+                    const ta = doc.querySelector('[data-testid="stChatInput"] textarea');
+                    if (ta) {
+                        const setter = Object.getOwnPropertyDescriptor(
+                            window.HTMLTextAreaElement.prototype, 'value').set;
+                        setter.call(ta, text);
+                        ta.dispatchEvent(new Event('input', {bubbles:true}));
+                        ta.focus();
+                    }
+                };
+                rec.onend = function(){
+                    listening = false;
+                    btn.textContent = '🎤';
+                    btn.style.opacity = '0.45';
+                };
+                rec.onerror = function(ev){
+                    listening = false;
+                    btn.textContent = '🎤';
+                    btn.style.opacity = '0.45';
+                    if (ev.error === 'not-allowed') alert('请允许麦克风权限后重试');
+                };
+                rec.start();
+                listening = true;
+                btn.textContent = '🔴';
+                btn.style.opacity = '1';
+            } catch(e) {}
+        });
+        doc.body.appendChild(btn);
+    }
 
-    rec.onresult = function(e){
-        const text = e.results[0][0].transcript;
-        status.textContent = '✅ 识别到：' + text;
-        // 跨 iframe 写入父页面 Streamlit 聊天输入框
-        const doc = window.parent.document;
-        const ta = doc.querySelector('[data-testid="stChatInput"] textarea');
-        if (ta) {
-            const setter = Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype, 'value').set;
-            setter.call(ta, text);
-            ta.dispatchEvent(new Event('input', {bubbles:true}));
-        }
-    };
-
-    rec.onend = function(){
-        listening = false;
-        btn.textContent = '🎤 说话';
-        btn.style.background = 'linear-gradient(135deg,#8E7CA8,#A89AC0)';
-    };
-
-    rec.onerror = function(e){
-        listening = false;
-        btn.textContent = '🎤 说话';
-        btn.style.background = 'linear-gradient(135deg,#8E7CA8,#A89AC0)';
-        if (e.error === 'not-allowed') status.textContent = '⚠ 请允许麦克风权限';
-        else if (e.error === 'no-speech') status.textContent = '没听清，请再试一次';
-    };
+    createBtn();
+    // Streamlit 重渲染可能移除按钮，定时检查确保始终存在
+    setInterval(createBtn, 1500);
 })();
 </script>
-""", height=50)
+""", height=0)
 
 
 def voice_output_component(text):
@@ -1142,14 +1146,19 @@ def voice_output_component(text):
 
 
 def voice_stop_component():
-    """渲染语音停止组件：停止主页面上下文中正在进行的语音播报（退出登录/返回主页时调用）"""
+    """渲染语音停止组件：停止语音播报 + 移除麦克风按钮（退出登录/返回主页时调用）"""
     import streamlit.components.v1 as components
     components.html("""
 <div style="display:none;"></div>
 <script>
 (function(){
     const w = window.parent;
+    const doc = w.document;
+    // 停止语音播报
     if (w.speechSynthesis) w.speechSynthesis.cancel();
+    // 移除聊天栏麦克风按钮（登录页/破冰页不显示）
+    const mic = doc.getElementById('vi-mic-btn');
+    if (mic) mic.remove();
 })();
 </script>
 """, height=1)
@@ -1552,6 +1561,8 @@ FOREST_QUESTIONS = [
 
 # ---------- 破冰测试页渲染（page_state == 'test'） ----------
 if st.session_state.page_state == "test":
+    # 破冰页移除麦克风按钮（聊天栏未显示，按钮不应悬浮）
+    voice_stop_component()
     # 破冰页隐藏侧边栏与聊天输入框，内容居中聚焦
     st.markdown("""
     <style>
@@ -1900,21 +1911,6 @@ st.markdown(
     "background: linear-gradient(to right, #B8D4E3, transparent);'></div>",
     unsafe_allow_html=True
 )
-# 用户信息入口：手机号默认收缩，点开查看手机号等登录信息（隐私优先）
-_, _user_col, _ = st.columns([1, 0.5, 1])
-with _user_col:
-    _phone = st.session_state.phone_num
-    _masked_phone = _phone[:3] + "****" + _phone[-4:] if len(_phone) == 11 else "****"
-    with st.popover("👤 用户信息", use_container_width=True):
-        st.markdown(
-            '<div style="text-align:center; color:#8E7CA8; font-size:0.75rem; '
-            'margin-bottom:0.5rem;">🔒 以下信息仅你可见</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"**📱 手机号**:{_masked_phone}")
-        st.markdown(f"**🐱 匿名昵称**:{get_nickname()}")
-        st.markdown(f"**🔒 会话编号**:`{get_session_id()}`")
-        st.markdown("**✅ 登录状态**:已登录" if not st.session_state.is_guest else "**🐾 登录状态**:游客模式")
 # 开场白气泡上方的淡色情绪标签(心理陪伴氛围)
 st.markdown(
     "<p style='text-align: center; color: #9BB5A8; font-size: 0.75rem; "
@@ -2006,7 +2002,7 @@ else:
                 st.session_state.messages.append({"role": "assistant", "content": q["reply"]})
                 st.rerun()
 
-# 语音输入按钮（浏览器原生语音识别，点击说话自动填入输入框）
+# 语音输入：麦克风按钮注入聊天输入栏内（豆包风格，紧贴发送键左侧）
 voice_input_component()
 
 # 接收用户输入
