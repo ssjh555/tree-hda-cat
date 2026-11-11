@@ -1713,7 +1713,7 @@ if not st.session_state.logged_in:
         unsafe_allow_html=True,
     )
 
-    # 手机号 + 验证码无痕登录表单（收缩进"用户登录"展开栏，点开才显示）
+  # 手机号 + 验证码无痕登录表单（收缩进"用户登录"展开栏，点开才显示）
     _, form_col, _ = st.columns([1, 1.2, 1])
     with form_col:
         with st.expander("🔐 用户登录", expanded=False):
@@ -1795,7 +1795,6 @@ if not st.session_state.logged_in:
     )
 
     st.stop()  # 登录页不渲染后续聊天界面
-
 # ==================== 森林微测试破冰页（登录后 → 聊天前） ====================
 # 设计理念：从15道经典森林心理测试中随机抽1题作趣味破冰，降低开口门槛；仅供娱乐，不做任何心理诊断
 FOREST_QUESTIONS = [
