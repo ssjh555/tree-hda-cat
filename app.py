@@ -176,6 +176,8 @@ GREETING = (
 
 # 猫咪头像路径（本地方形头像）
 CAT_AVATAR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cat_avatar.png")
+# 首页全屏背景图路径（与聊天页配色统一的治愈系水彩渐变 + 猫咪剪影）
+COVER_BG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cover_bg.png")
 
 # 用户头像（学生 emoji，贴合大学生主题）
 USER_AVATAR = "🧑‍🎓"
@@ -626,22 +628,67 @@ section[data-testid="stSidebar"] [data-testid="stImage"] {
     font-style: italic;
     letter-spacing: 0.05em;
 }
-/* 封面猫咪头像：完美居中 + 柔光呼吸 */
+/* 封面猫咪对话气泡：轻透圆角 + 小尾巴 + 轻微浮动 */
+.cover-cat-bubble {
+    position: relative;
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(212, 197, 224, 0.5);
+    border-radius: 18px;
+    padding: 0.55rem 1.15rem;
+    font-size: 0.85rem;
+    color: #7A6795;
+    margin: 0.5rem auto 0.7rem auto;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 2px 12px rgba(160, 140, 190, 0.12);
+    animation: bubble-float 3s ease-in-out infinite;
+}
+.cover-cat-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -7px;
+    left: 50%;
+    width: 14px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.72);
+    border-right: 1px solid rgba(212, 197, 224, 0.5);
+    border-bottom: 1px solid rgba(212, 197, 224, 0.5);
+    transform: translateX(-50%) rotate(45deg);
+}
+@keyframes bubble-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+/* 封面猫咪头像：全屏背景铺满 + 柔光呼吸 */
 .cover-avatar-wrap {
-    display: flex;
-    justify-content: center;
-    margin: 0.6rem 0 1.2rem;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
 }
 .cover-avatar {
-    width: 170px;
-    border-radius: 24px;
-    border: 3px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 8px 28px rgba(199, 125, 165, 0.28), 0 2px 8px rgba(108, 91, 123, 0.12);
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
     animation: cover-avatar-breathe 5s ease-in-out infinite;
 }
+/* 极淡白色遮罩：水彩背景图上保证前景文字清晰可读 */
+.cover-avatar-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255, 255, 255, 0.30);
+}
 @keyframes cover-avatar-breathe {
-    0%, 100% { transform: scale(1); box-shadow: 0 8px 28px rgba(199, 125, 165, 0.28), 0 2px 8px rgba(108, 91, 123, 0.12); }
-    50% { transform: scale(1.04); box-shadow: 0 12px 34px rgba(199, 125, 165, 0.38), 0 2px 8px rgba(108, 91, 123, 0.12); }
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+}
+/* 封面内容浮于全屏图片之上 */
+.cover-container, .cover-divider, .cover-float, .cover-notice,
+[data-testid="stExpander"], [data-testid="stButton"] {
+    position: relative;
+    z-index: 1;
 }
 
 /* ==================== 情绪快捷按钮样式 ==================== */
@@ -1034,9 +1081,10 @@ def send_sms_code(phone: str, code: str):
 # 语音输入：webkitSpeechRecognition 识别中文语音 → 自动填入聊天输入框
 # 语音播报：speechSynthesis 将 AI 回复朗读出来（温柔女声）
 
-def voice_input_component():
-    """麦克风按钮贴在聊天输入栏右侧（豆包风格：输入框内右下角，紧贴发送键）
-    通过 JS 在父页面 body 上创建 fixed 定位按钮，不受 Streamlit 重渲染影响。"""
+def voice_component():
+    """统一语音按钮：嵌入聊天输入栏，点击弹出菜单选择模式
+    - 🎤 说话转文字：语音识别后自动填入输入框
+    - 🎙️ 按住发语音：按住录音→松手发送原始语音（微信式交互+录音浮层+上滑取消）"""
     import streamlit.components.v1 as components
     components.html("""
 <div style="display:none;"></div>
@@ -1044,67 +1092,383 @@ def voice_input_component():
 (function(){
     const doc = window.parent.document;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let rec = null;
-    let listening = false;
 
-    function createBtn(){
-        if (doc.getElementById('vi-mic-btn')) return;
-        const btn = doc.createElement('button');
-        btn.id = 'vi-mic-btn';
-        btn.type = 'button';
-        btn.title = '点击说话，识别后自动填入';
-        btn.textContent = '🎤';
-        btn.style.cssText = [
-            'position:fixed','bottom:24px','right:118px','z-index:999999',
-            'background:transparent','border:none','cursor:pointer',
-            'font-size:1.25rem','padding:4px 6px','line-height:1.4',
-            'opacity:0.45','transition:all 0.25s'
-        ].join(';');
-        btn.addEventListener('mouseenter', function(){ btn.style.opacity='1'; });
-        btn.addEventListener('mouseleave', function(){ if(!listening) btn.style.opacity='0.45'; });
-        btn.addEventListener('click', function(e){
-            e.preventDefault(); e.stopPropagation();
-            if (!SR) { alert('当前浏览器不支持语音输入，建议使用 Chrome 或 Edge'); return; }
-            if (listening) { if (rec) rec.stop(); return; }
-            try {
-                rec = new SR();
-                rec.lang = 'zh-CN';
-                rec.continuous = false;
-                rec.interimResults = false;
-                rec.onresult = function(ev){
-                    const text = ev.results[0][0].transcript;
-                    const ta = doc.querySelector('[data-testid="stChatInput"] textarea');
-                    if (ta) {
-                        const setter = Object.getOwnPropertyDescriptor(
-                            window.HTMLTextAreaElement.prototype, 'value').set;
-                        setter.call(ta, text);
-                        ta.dispatchEvent(new Event('input', {bubbles:true}));
-                        ta.focus();
-                    }
-                };
-                rec.onend = function(){
-                    listening = false;
-                    btn.textContent = '🎤';
-                    btn.style.opacity = '0.45';
-                };
-                rec.onerror = function(ev){
-                    listening = false;
-                    btn.textContent = '🎤';
-                    btn.style.opacity = '0.45';
-                    if (ev.error === 'not-allowed') alert('请允许麦克风权限后重试');
-                };
-                rec.start();
-                listening = true;
-                btn.textContent = '🔴';
-                btn.style.opacity = '1';
-            } catch(e) {}
+    // ====== 状态 ======
+    let mode = 'idle';         // idle | listening | hold | recording
+    let rec = null;            // 语音转文字 SR
+    let recorder = null;       // MediaRecorder
+    let recognition = null;    // 语音消息并行 SR
+    let audioChunks = [];
+    let audioBase64 = "";
+    let transcriptText = "";
+    let audioReady = false;
+    let textReady = false;
+    let cancelled = false;
+    let pressStartTime = 0;
+    let pressStartY = 0;
+    let slideUpCancel = false;
+    let activeBtn = null;
+
+    // ====== 注入统一语音按钮样式 ======
+    function ensureStyle(){
+        if (doc.getElementById('vm-btn-style')) return;
+        var s = doc.createElement('style');
+        s.id = 'vm-btn-style';
+        s.textContent = ''
+            + '[data-testid="stChatInput"] .vmbtn{border:none!important;cursor:pointer!important;flex-shrink:0!important;display:flex!important;align-items:center!important;justify-content:center!important;align-self:flex-end!important;margin-bottom:3px!important;margin-right:2px!important;user-select:none!important;-webkit-user-select:none!important;transition:all 0.25s ease!important;line-height:1!important;touch-action:none!important;padding:0!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-idle{background:rgba(139,122,174,0.10)!important;border:1.5px solid rgba(139,122,174,0.22)!important;border-radius:50%!important;width:32px!important;height:32px!important;font-size:0.9rem!important;box-shadow:0 1px 4px rgba(139,122,174,0.08)!important;opacity:1!important;color:inherit!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-idle:hover{background:rgba(139,122,174,0.20)!important;transform:scale(1.1)!important;box-shadow:0 3px 10px rgba(139,122,174,0.20)!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-on{background:rgba(200,80,72,0.12)!important;border:1.5px solid rgba(200,80,72,0.38)!important;border-radius:50%!important;width:32px!important;height:32px!important;font-size:0.9rem!important;animation:vmbtnPulse 1.5s ease-in-out infinite!important;opacity:1!important;color:inherit!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-hold{background:rgba(199,125,165,0.15)!important;border:1.5px solid rgba(199,125,165,0.35)!important;border-radius:16px!important;padding:4px 12px!important;font-size:0.75rem!important;color:#8B5E7E!important;font-weight:600!important;letter-spacing:0.05em!important;opacity:1!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-hold:hover{background:rgba(199,125,165,0.25)!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-rec{background:linear-gradient(135deg,#8B7AAE,#9B85C0)!important;border:none!important;border-radius:20px!important;padding:5px 14px!important;font-size:0.75rem!important;color:#FFF!important;font-weight:600!important;letter-spacing:0.05em!important;box-shadow:0 3px 14px rgba(139,122,174,0.40)!important;opacity:1!important;}'
+            + '[data-testid="stChatInput"] .vmbtn-cancel{background:linear-gradient(135deg,#C0564E,#D06858)!important;border:none!important;border-radius:20px!important;padding:5px 14px!important;font-size:0.75rem!important;color:#FFF!important;font-weight:600!important;letter-spacing:0.05em!important;box-shadow:0 3px 14px rgba(192,86,78,0.40)!important;opacity:1!important;}'
+            + '#vm-menu{position:fixed;z-index:99999;background:rgba(255,255,255,0.96);border-radius:14px;padding:6px;box-shadow:0 8px 30px rgba(60,50,80,0.18);backdrop-filter:blur(10px);border:1px solid rgba(200,190,220,0.3);min-width:150px;}'
+            + '.vm-menu-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;cursor:pointer;font-size:0.82rem;color:#5A4E6E;transition:background 0.15s;font-weight:500;}'
+            + '.vm-menu-item:hover{background:rgba(139,122,174,0.10);}'
+            + '.vm-menu-item .vm-menu-icon{font-size:1rem;width:22px;text-align:center;}'
+            + '@keyframes vmbtnPulse{0%,100%{box-shadow:0 0 0 4px rgba(200,80,72,0.10);}50%{box-shadow:0 0 0 8px rgba(200,80,72,0.04);}}'
+            + '@keyframes vmRipple{0%{transform:scale(1);opacity:0.7;}100%{transform:scale(1.8);opacity:0;}}';
+        doc.head.appendChild(s);
+    }
+    ensureStyle();
+
+    // ====== 模式菜单（点击按钮弹出） ======
+    function showMenu(btn){
+        closeMenu();
+        var rect = btn.getBoundingClientRect();
+        var menu = doc.createElement('div');
+        menu.id = 'vm-menu';
+        menu.innerHTML =
+            '<div class="vm-menu-item" id="vm-m-item-text"><span class="vm-menu-icon">🎤</span>说话转文字</div>'
+            + '<div class="vm-menu-item" id="vm-m-item-voice"><span class="vm-menu-icon">🎙️</span>按住发语音</div>';
+        doc.body.appendChild(menu);
+        // 定位：按钮上方居中
+        var mRect = menu.getBoundingClientRect();
+        var left = rect.left + rect.width / 2 - mRect.width / 2;
+        var top = rect.top - mRect.height - 8;
+        menu.style.left = Math.max(8, left) + 'px';
+        menu.style.top = Math.max(8, top) + 'px';
+        // 选项1：说话转文字
+        doc.getElementById('vm-m-item-text').addEventListener('click', function(e){
+            e.stopPropagation(); closeMenu(); startListen(btn);
         });
-        doc.body.appendChild(btn);
+        // 选项2：按住发语音
+        doc.getElementById('vm-m-item-voice').addEventListener('click', function(e){
+            e.stopPropagation(); closeMenu(); enterHold(btn);
+        });
+        // 点击其他区域关闭菜单
+        setTimeout(function(){
+            doc.addEventListener('mousedown', menuOutsideClose);
+            doc.addEventListener('touchstart', menuOutsideClose, {passive: true});
+        }, 10);
+    }
+    function menuOutsideClose(e){
+        var menu = doc.getElementById('vm-menu');
+        if (menu && !menu.contains(e.target)) closeMenu();
+    }
+    function closeMenu(){
+        var menu = doc.getElementById('vm-menu');
+        if (menu) menu.remove();
+        doc.removeEventListener('mousedown', menuOutsideClose);
+        doc.removeEventListener('touchstart', menuOutsideClose);
     }
 
-    createBtn();
-    // Streamlit 重渲染可能移除按钮，定时检查确保始终存在
-    setInterval(createBtn, 1500);
+    // ====== 模式1：说话转文字 ======
+    function startListen(btn){
+        if (!SR) { alert('当前浏览器不支持语音输入，建议使用 Chrome 或 Edge'); return; }
+        if (mode === 'listening') { if (rec) rec.stop(); return; }
+        try {
+            rec = new SR();
+            rec.lang = 'zh-CN';
+            rec.continuous = false;
+            rec.interimResults = false;
+            rec.onresult = function(ev){
+                var text = ev.results[0][0].transcript;
+                var ta = doc.querySelector('[data-testid="stChatInput"] textarea');
+                if (ta) {
+                    var setter = Object.getOwnPropertyDescriptor(
+                        window.HTMLTextAreaElement.prototype, 'value').set;
+                    setter.call(ta, text);
+                    ta.dispatchEvent(new Event('input', {bubbles:true}));
+                    ta.focus();
+                }
+            };
+            rec.onend = function(){ mode = 'idle'; setBtnIdle(btn); };
+            rec.onerror = function(ev){
+                mode = 'idle'; setBtnIdle(btn);
+                if (ev.error === 'not-allowed') alert('请允许麦克风权限后重试');
+            };
+            rec.start();
+            mode = 'listening';
+            btn.textContent = '🔴';
+            btn.className = 'vmbtn vmbtn-on';
+            btn.title = '正在聆听，点击停止';
+        } catch(e) {}
+    }
+
+    // ====== 按钮状态函数 ======
+    function setBtnIdle(btn){
+        btn.textContent = '🎤';
+        btn.title = '点击选择语音模式';
+        btn.className = 'vmbtn vmbtn-idle';
+        mode = 'idle';
+    }
+    function enterHold(btn){
+        mode = 'hold';
+        btn.textContent = '按住说话';
+        btn.title = '按住录音，松手发送';
+        btn.className = 'vmbtn vmbtn-hold';
+    }
+
+    // ====== 模式2：按住发语音（微信式） ======
+    function ensureOverlay(){
+        if (doc.getElementById('vm-overlay')) return;
+        var ov = doc.createElement('div');
+        ov.id = 'vm-overlay';
+        ov.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:99998;background:rgba(0,0,0,0);pointer-events:none;';
+        ov.innerHTML =
+            '<div id="vm-panel" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'
+            + 'background:rgba(40,36,56,0.88);border-radius:16px;padding:1.4rem 1.8rem 1.1rem 1.8rem;'
+            + 'text-align:center;min-width:150px;backdrop-filter:blur(8px);'
+            + 'box-shadow:0 8px 32px rgba(0,0,0,0.25);transition:all 0.2s ease;">'
+            + '<div id="vm-mic-box" style="width:64px;height:64px;margin:0 auto 0.8rem auto;border-radius:50%;'
+            + 'background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;position:relative;">'
+            + '<span id="vm-mic-emoji" style="font-size:2rem;">🎙️</span>'
+            + '<span id="vm-wave1" style="position:absolute;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,0.35);animation:vmRipple 1.2s ease-out infinite;"></span>'
+            + '<span id="vm-wave2" style="position:absolute;width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);animation:vmRipple 1.2s ease-out 0.6s infinite;"></span>'
+            + '</div>'
+            + '<div id="vm-ov-text" style="color:#E8DFF0;font-size:0.88rem;font-weight:500;letter-spacing:0.05em;">正在录音…</div>'
+            + '<div id="vm-ov-hint" style="color:rgba(232,223,240,0.55);font-size:0.72rem;margin-top:0.45rem;">↑ 上滑取消发送</div>'
+            + '</div>';
+        // 波纹动画 keyframes 已在 ensureStyle 中统一注入
+        doc.body.appendChild(ov);
+    }
+
+    function showOverlay(){
+        ensureOverlay();
+        var ov = doc.getElementById('vm-overlay');
+        var panel = doc.getElementById('vm-panel');
+        var emoji = doc.getElementById('vm-mic-emoji');
+        var text = doc.getElementById('vm-ov-text');
+        var hint = doc.getElementById('vm-ov-hint');
+        ov.style.display = 'block';
+        panel.style.background = 'rgba(40,36,56,0.88)';
+        panel.style.transform = 'translate(-50%,-50%) scale(1)';
+        emoji.textContent = '🎙️';
+        text.textContent = '正在录音…';
+        text.style.color = '#E8DFF0';
+        hint.textContent = '↑ 上滑取消发送';
+        hint.style.color = 'rgba(232,223,240,0.55)';
+        hint.style.display = 'block';
+    }
+
+    function showCancelState(){
+        var panel = doc.getElementById('vm-panel');
+        var emoji = doc.getElementById('vm-mic-emoji');
+        var text = doc.getElementById('vm-ov-text');
+        var hint = doc.getElementById('vm-ov-hint');
+        if (!panel) return;
+        panel.style.background = 'rgba(180,50,50,0.9)';
+        emoji.textContent = '🗑️';
+        text.textContent = '松开手指，取消发送';
+        text.style.color = '#FFD0D0';
+        hint.style.display = 'none';
+    }
+
+    function showNormalState(){
+        var panel = doc.getElementById('vm-panel');
+        var emoji = doc.getElementById('vm-mic-emoji');
+        var text = doc.getElementById('vm-ov-text');
+        var hint = doc.getElementById('vm-ov-hint');
+        if (!panel) return;
+        panel.style.background = 'rgba(40,36,56,0.88)';
+        emoji.textContent = '🎙️';
+        text.textContent = '正在录音…';
+        text.style.color = '#E8DFF0';
+        hint.style.display = 'block';
+        hint.textContent = '↑ 上滑取消发送';
+        hint.style.color = 'rgba(232,223,240,0.55)';
+    }
+
+    function showTooShort(){
+        var panel = doc.getElementById('vm-panel');
+        var emoji = doc.getElementById('vm-mic-emoji');
+        var text = doc.getElementById('vm-ov-text');
+        var hint = doc.getElementById('vm-ov-hint');
+        if (!panel) return;
+        panel.style.background = 'rgba(40,36,56,0.88)';
+        emoji.textContent = '⏱';
+        text.textContent = '说话时间太短';
+        text.style.color = '#F0E0A0';
+        hint.style.display = 'none';
+    }
+
+    function hideOverlay(){
+        var ov = doc.getElementById('vm-overlay');
+        if (ov) ov.style.display = 'none';
+    }
+
+    // ====== 录音状态按钮切换 ======
+    function btnRecording(btn){
+        btn.textContent = '松开发送';
+        btn.title = '松手发送语音';
+        btn.className = 'vmbtn vmbtn-rec';
+    }
+    function btnCancel(btn){
+        btn.textContent = '取消发送';
+        btn.title = '松开取消';
+        btn.className = 'vmbtn vmbtn-cancel';
+    }
+
+    function trySend(){
+        if (cancelled) return;
+        if (audioReady && textReady) {
+            audioReady = false; textReady = false;
+            var data = JSON.stringify({audio: audioBase64, text: transcriptText});
+            var target = null;
+            var containers = doc.querySelectorAll('[data-testid="stTextInput"]');
+            for (var i = 0; i < containers.length; i++) {
+                var inp = containers[i].querySelector('input');
+                if (inp && inp.getAttribute('aria-label') === 'voice_msg_data') { target = inp; break; }
+            }
+            if (target) {
+                target.focus();
+                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(target, data);
+                target.dispatchEvent(new Event('input', {bubbles: true}));
+                target.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}));
+                target.dispatchEvent(new KeyboardEvent('keyup', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}));
+                target.blur();
+            }
+        }
+    }
+
+    function startRec(btn){
+        activeBtn = btn;
+        pressStartTime = Date.now();
+        pressStartY = 0;
+        slideUpCancel = false;
+        cancelled = false;
+        btnRecording(btn);
+        showOverlay();
+        navigator.mediaDevices.getUserMedia({audio: true}).then(function(stream){
+            audioChunks = []; audioBase64 = ""; transcriptText = "";
+            audioReady = false; textReady = false;
+            try {
+                recorder = new MediaRecorder(stream);
+                recorder.ondataavailable = function(e){ if(e.data && e.data.size > 0) audioChunks.push(e.data); };
+                recorder.onstop = function(){
+                    var blob = new Blob(audioChunks, {type: 'audio/webm'});
+                    if (blob.size < 500) { audioReady = true; trySend(); return; }
+                    var reader = new FileReader();
+                    reader.onloadend = function(){
+                        audioBase64 = reader.result.split(',')[1];
+                        audioReady = true; trySend();
+                    };
+                    reader.readAsDataURL(blob);
+                    stream.getTracks().forEach(function(t){ t.stop(); });
+                };
+                recorder.start();
+            } catch(e) { hideOverlay(); setBtnIdle(btn); alert('录音失败：' + e.message); return; }
+            if (SR) {
+                try {
+                    recognition = new SR();
+                    recognition.lang = 'zh-CN';
+                    recognition.continuous = false;
+                    recognition.interimResults = false;
+                    recognition.onresult = function(ev){ transcriptText = ev.results[0][0].transcript; };
+                    recognition.onend = function(){ textReady = true; trySend(); };
+                    recognition.onerror = function(){ textReady = true; trySend(); };
+                    recognition.start();
+                } catch(e) { textReady = true; }
+            } else { textReady = true; }
+            mode = 'recording';
+        }).catch(function(){ hideOverlay(); setBtnIdle(btn); alert('请允许麦克风权限后重试'); });
+    }
+
+    function stopRec(btn){
+        var tooShort = Date.now() - pressStartTime < 300;
+        if (tooShort || slideUpCancel) {
+            cancelled = true;
+            if (tooShort) { showTooShort(); }
+            setTimeout(function(){ hideOverlay(); setBtnIdle(btn); }, tooShort ? 600 : 150);
+        } else {
+            cancelled = false;
+            hideOverlay();
+            setBtnIdle(btn);
+        }
+        if (recorder && recorder.state === 'recording') { recorder.stop(); }
+        if (recognition) { try { recognition.stop(); } catch(e){} }
+        setTimeout(function(){ if(!cancelled && !textReady){ textReady = true; trySend(); } }, 2500);
+        slideUpCancel = false;
+        activeBtn = null;
+    }
+
+    // ====== 上滑取消检测（绑定在 doc 上，鼠标/手指移出按钮范围也能检测） ======
+    function onSlideCheck(clientY){
+        if (mode !== 'recording' || !activeBtn) return;
+        if (!pressStartY) { pressStartY = clientY; return; }
+        var deltaY = pressStartY - clientY;   // 上滑时 deltaY > 0
+        if (deltaY > 60) {
+            if (!slideUpCancel) { slideUpCancel = true; showCancelState(); btnCancel(activeBtn); }
+        } else if (slideUpCancel) {
+            slideUpCancel = false; showNormalState(); btnRecording(activeBtn);
+        }
+    }
+    doc.addEventListener('mousemove', function(e){ onSlideCheck(e.clientY); });
+    doc.addEventListener('touchmove', function(e){
+        if (e.touches && e.touches.length > 0) onSlideCheck(e.touches[0].clientY);
+    }, {passive: true});
+
+    function inject(){
+        ensureStyle();
+        const inputBar = doc.querySelector('[data-testid="stChatInput"]');
+        if (!inputBar) return;
+        if (inputBar.querySelector('#vm-voice-btn')) return;
+        const btn = doc.createElement('button');
+        btn.id = 'vm-voice-btn';
+        btn.type = 'button';
+        setBtnIdle(btn);
+        // 点击：idle 弹出菜单 / listening 停止识别
+        btn.addEventListener('click', function(e){
+            e.preventDefault(); e.stopPropagation();
+            if (mode === 'idle') { showMenu(btn); }
+            else if (mode === 'listening') { if (rec) rec.stop(); }
+        });
+        // 按住：hold 模式开始录音（微信式）
+        btn.addEventListener('mousedown', function(e){
+            if (mode !== 'hold') return;
+            e.preventDefault(); e.stopPropagation();
+            startRec(btn);
+        });
+        btn.addEventListener('touchstart', function(e){
+            if (mode !== 'hold') return;
+            e.preventDefault(); e.stopPropagation();
+            if (e.touches.length > 0) {
+                pressStartY = e.touches[0].clientY;
+                startRec(btn);
+            }
+        }, {passive: false});
+        btn.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+        // 插入到发送按钮前面
+        const sendBtn = inputBar.querySelector('button[kind="primary"]');
+        if (sendBtn && sendBtn.parentElement) {
+            sendBtn.parentElement.insertBefore(btn, sendBtn);
+        } else {
+            inputBar.appendChild(btn);
+        }
+    }
+
+    // 松手检测绑定在 doc 上（手指/鼠标可能已移出按钮范围）
+    doc.addEventListener('mouseup', function(){ if (mode === 'recording' && activeBtn) stopRec(activeBtn); });
+    doc.addEventListener('touchend', function(){ if (mode === 'recording' && activeBtn) stopRec(activeBtn); }, {passive: true});
+    // 鼠标按下时记录起始Y（供 mousemove 上滑检测）
+    doc.addEventListener('mousedown', function(e){ if (mode === 'recording' && !pressStartY) pressStartY = e.clientY; });
+
+    const observer = new MutationObserver(function(){ inject(); });
+    observer.observe(doc.body, {childList:true, subtree:true});
+    inject();
 })();
 </script>
 """, height=0)
@@ -1146,19 +1510,15 @@ def voice_output_component(text):
 
 
 def voice_stop_component():
-    """渲染语音停止组件：停止语音播报 + 移除麦克风按钮（退出登录/返回主页时调用）"""
+    """渲染语音停止组件：停止语音播报（退出登录/返回主页时调用）
+    麦克风按钮在 stChatInput 内部，登录页/破冰页隐藏聊天栏时按钮自动不可见，无需手动移除。"""
     import streamlit.components.v1 as components
     components.html("""
 <div style="display:none;"></div>
 <script>
 (function(){
     const w = window.parent;
-    const doc = w.document;
-    // 停止语音播报
     if (w.speechSynthesis) w.speechSynthesis.cancel();
-    // 移除聊天栏麦克风按钮（登录页/破冰页不显示）
-    const mic = doc.getElementById('vi-mic-btn');
-    if (mic) mic.remove();
 })();
 </script>
 """, height=1)
@@ -1224,7 +1584,7 @@ if not st.session_state.logged_in:
         top: 0;
         height: 100vh;
         width: 190px;
-        z-index: 0;
+        z-index: 1;
     }
     .cover-side-left { left: 5.5rem; }
     .cover-side-right { right: 5.5rem; }
@@ -1282,11 +1642,38 @@ if not st.session_state.logged_in:
     </style>
     """, unsafe_allow_html=True)
 
-    # 首页两侧装饰：最外缘emoji漂浮（两侧文本卡片已移除）
+    # 首页两侧装饰：最外缘emoji漂浮 + 两侧内容卡片（让封面更饱满）
     # emoji贴最外边（1.4rem），chat-deco仅封面页渲染
     st.markdown(
         '<div class="chat-deco chat-deco-left"><span>🌿</span><span>🐾</span><span>🌱</span><span>🍃</span><span>☘️</span><span>🍂</span></div>'
         '<div class="chat-deco chat-deco-right"><span>🌙</span><span>✨</span><span>⭐</span><span>☁️</span><span>💫</span><span>🌟</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    # 两侧内容卡片：左侧治愈语录 + 可聊话题，右侧陪伴数据 + 猫咪贴士
+    _warm_quotes = [
+        "你不需要很好，猫咪觉得你已经很棒了",
+        "今天也是值得被温柔对待的一天",
+        "慢慢来，不着急，猫咪一直等你",
+        "你的每一种感受，都值得被听见",
+        "累了就休息一下，这不是放弃哦",
+        "允许自己不完美，那也很可爱",
+    ]
+    _quote = random.choice(_warm_quotes)
+    _today_count = random.randint(38, 126)
+    _total_count = random.randint(2800, 3600)
+    st.markdown(
+        '<div class="cover-side cover-side-left">'
+        f'<div class="cover-side-card"><span class="side-card-icon">🌿</span>今日暖心话<br><b>{_quote}</b></div>'
+        '<div class="cover-side-card"><span class="side-card-icon">💬</span>你可以和猫咪聊<br>'
+        '📚 学业压力 · 💭 人际烦恼<br>💗 情感困惑 · 🌙 深夜心事</div>'
+        '</div>'
+        '<div class="cover-side cover-side-right">'
+        f'<div class="cover-side-card"><span class="side-card-icon">🐾</span>今日已有 <b>{_today_count}</b> 位同学<br>在这里被温柔倾听<br>'
+        f'累计倾听 <b>{_total_count}</b> 次心事</div>'
+        '<div class="cover-side-card"><span class="side-card-icon">🌙</span>猫咪小贴士<br>'
+        '说不出口也没关系<br>打字给猫咪也一样哦</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -1295,6 +1682,7 @@ if not st.session_state.logged_in:
     <div class="cover-float"><span>✨</span><span>🌙</span><span>☁️</span><span>⭐</span></div>
     <div class="cover-container">
         <div class="cover-paws">🐾 🐱 🐾</div>
+        <div class="cover-cat-bubble">喵~ 今天过得怎么样？进来和猫咪说说话吧 🐾</div>
         <h1 class="cover-title">🐾 树洞猫咪</h1>
         <p class="cover-subtitle">你的校园情绪树洞</p>
         <div class="cover-hairline"></div>
@@ -1313,12 +1701,14 @@ if not st.session_state.logged_in:
     <div class="cover-divider"><span class="line"></span><span class="dot">🐾</span><span class="line"></span></div>
     """, unsafe_allow_html=True)
 
-    # 猫咪头像（HTML 完美居中 + 柔光呼吸动画，不受 Streamlit 列布局左对齐影响）
-    with open(CAT_AVATAR, "rb") as _f:
-        _avatar_b64 = base64.b64encode(_f.read()).decode()
+    # 首页全屏背景图（真实治愈系风景图，全屏铺满 + 柔光呼吸）
+    with open(COVER_BG, "rb") as _f:
+        _bg_b64 = base64.b64encode(_f.read()).decode()
+    _bg_ext = os.path.splitext(COVER_BG)[1].lstrip(".").lower()
+    _bg_mime = "jpeg" if _bg_ext in ("jpg", "jpeg") else "png"
     st.markdown(
         f'<div class="cover-avatar-wrap">'
-        f'<img src="data:image/png;base64,{_avatar_b64}" class="cover-avatar" alt="树洞猫咪">'
+        f'<img src="data:image/{_bg_mime};base64,{_bg_b64}" class="cover-avatar" alt="树洞猫咪">'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -1944,7 +2334,14 @@ for message in st.session_state.messages:
                 f"border-radius:10px; margin-bottom:6px;'>{emoji} {message['emotion']}</span>",
                 unsafe_allow_html=True,
             )
-        st.markdown(message["content"])
+        # 语音消息：渲染可播放音频气泡（保留原声），识别文字以小字附注
+        if message.get("audio"):
+            _audio_bytes = base64.b64decode(message["audio"])
+            st.audio(_audio_bytes, format="audio/webm")
+            if message.get("content") and message["content"] != "[语音消息]":
+                st.caption(f"💬 {message['content']}")
+        else:
+            st.markdown(message["content"])
 
 # 语音播报：检测到新AI回复且开关开启时自动朗读（只播最新一条，不重复播报）
 if st.session_state.voice_enabled and st.session_state.messages:
@@ -2002,8 +2399,107 @@ else:
                 st.session_state.messages.append({"role": "assistant", "content": q["reply"]})
                 st.rerun()
 
-# 语音输入：麦克风按钮注入聊天输入栏内（豆包风格，紧贴发送键左侧）
-voice_input_component()
+# 统一语音按钮：点击弹出菜单选择 说话转文字 / 按住发语音
+voice_component()
+
+# 隐藏的语音消息数据接收框（JS写入 base64音频+识别文字JSON，CSS完全隐藏不可见）
+st.markdown(
+    '<style>div[data-testid="stTextInput"]:has(input[aria-label="voice_msg_data"])'
+    '{display:none!important;height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;}</style>',
+    unsafe_allow_html=True,
+)
+_voice_msg_raw = st.text_input("voice_msg_data", key="voice_msg_data", label_visibility="collapsed")
+
+# ===== 语音消息处理：解析音频+识别文字 → 风控检测 → 入历史 → AI回复 =====
+if _voice_msg_raw and len(_voice_msg_raw) > 20 and _voice_msg_raw != st.session_state.get("_last_voice_msg", ""):
+    # 去重标志：记录已处理的语音数据，防止 rerun 时重复处理（不能直接清空 widget 的 session_state，会报错）
+    st.session_state._last_voice_msg = _voice_msg_raw
+    try:
+        _vdata = json.loads(_voice_msg_raw)
+        _audio_b64 = _vdata.get("audio", "")
+        _transcript = _vdata.get("text", "").strip()
+    except Exception:
+        _audio_b64 = ""
+        _transcript = ""
+    # 注意：不能在这里设置 st.session_state.voice_msg_data = ""，
+    # widget 渲染后修改其 session_state key 会抛 StreamlitAPIException；
+    # 改用上方 _last_voice_msg 去重标志防止重复处理
+
+    if _audio_b64:
+        _voice_text = _transcript  # 识别文字供 AI 理解（浏览器不支持识别时可能为空）
+        _emotion = detect_emotion(_voice_text) if _voice_text else ""
+        _level = detect_crisis_level(_voice_text) if _voice_text else 0
+
+        if _level == 2:
+            _is_crisis = True
+        elif _level == 1:
+            _is_crisis = llm_confirm_crisis(_voice_text)
+        else:
+            _is_crisis = False
+
+        if _is_crisis:
+            # 危机处理（同文字消息流程：脱敏预警简报 + 持久化 + 拦截回复）
+            cleaned_log = _voice_text
+            for safe in SAFE_PATTERNS:
+                cleaned_log = cleaned_log.replace(safe, "")
+            lowered_log = cleaned_log.lower()
+            live_h, live_a = fetch_live_crisis_keywords()
+            combined_high = HIGH_RISK_KEYWORDS + [w for w in live_h if w not in HIGH_RISK_KEYWORDS]
+            combined_amb = AMBIGUOUS_KEYWORDS + [w for w in live_a if w not in AMBIGUOUS_KEYWORDS]
+            hit_word = next((kw for kw in combined_high + combined_amb if kw in lowered_log), _voice_text[:15])
+            _masked = f"用户尾号{st.session_state.phone_num[-4:]}" if st.session_state.phone_num else "匿名用户"
+            alert_brief = {"学生": _masked, "风险": "高危", "时间": "刚刚", "触发词": hit_word}
+            print(f"[脱敏预警简报] {alert_brief}")
+            st.session_state.alert_logs.append(alert_brief)
+            save_alert({
+                "session_id": get_session_id(),
+                "nickname": _masked,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "risk_level": "高危",
+                "trigger_word": hit_word,
+                "contact_left": False,
+            })
+            st.session_state.messages.append({"role": "user", "content": _voice_text or "[语音消息]", "audio": _audio_b64, "emotion": ""})
+            st.session_state.messages.append({"role": "assistant", "content": CRISIS_REPLY})
+            st.session_state.crisis_active = True
+            st.session_state.crisis_just_triggered = True
+            st.rerun()
+
+        # 未命中危机：渲染语音气泡 → 入历史 → AI 流式回复
+        st.session_state.crisis_active = False
+        st.session_state.contact_submitted = False
+        with st.chat_message("user", avatar=USER_AVATAR):
+            if _emotion:
+                emoji = EMOTION_EMOJI.get(_emotion, "💭")
+                st.markdown(
+                    f"<span style='display:inline-block; background:#F0E6F6; "
+                    f"color:#6C5B7B; font-size:0.75rem; padding:2px 10px; "
+                    f"border-radius:10px; margin-bottom:6px;'>{emoji} {_emotion}</span>",
+                    unsafe_allow_html=True,
+                )
+            st.audio(base64.b64decode(_audio_b64), format="audio/webm")
+            if _voice_text:
+                st.caption(f"💬 {_voice_text}")
+        st.session_state.messages.append({"role": "user", "content": _voice_text or "[语音消息]", "audio": _audio_b64, "emotion": _emotion})
+
+        _vm_for_api = (
+            [{"role": "system", "content": SYSTEM_PROMPT}]
+            + [{k: v for k, v in m.items() if k in ("role", "content")} for m in st.session_state.messages[-MAX_HISTORY:]]
+        )
+        with st.chat_message("assistant", avatar=CAT_AVATAR):
+            try:
+                stream = client.chat.completions.create(
+                    model="glm-4-flash",
+                    messages=_vm_for_api,
+                    stream=True,
+                    temperature=0.85,
+                    max_tokens=300,
+                )
+                response = st.write_stream(stream)
+            except Exception:
+                response = "喵…猫咪的信号好像不太好，稍等一下再试试好吗？🐾"
+                st.markdown(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
 
 # 接收用户输入
 if prompt := st.chat_input("跟我说点什么吧..."):
