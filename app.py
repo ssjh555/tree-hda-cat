@@ -976,7 +976,7 @@ if st.query_params.get("view") == "teacher":
     try:
         TEACHER_KEY = st.secrets["TEACHER_KEY"]
     except Exception:
-        TEACHER_KEY = "sd123456"
+        TEACHER_KEY = "shudong123456"
     if "teacher_authed" not in st.session_state:
         st.session_state.teacher_authed = False
     if not st.session_state.teacher_authed:
