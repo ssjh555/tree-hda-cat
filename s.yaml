@@ -1,8 +1,10 @@
 edition: 3.0.0
 name: tree-hda-cat
 access: default
+
 vars:
   region: "cn-hangzhou"
+
 resources:
   streamlit_app:
     component: fc3
@@ -10,13 +12,29 @@ resources:
       region: ${vars.region}
       functionName: "tree-hda-cat"
       description: "Tree HDA Cat Streamlit Agent"
-      runtime: "python3.10"
+      # 关键修改：使用自定义运行时
+      runtime: "custom"
       code: ./
       memorySize: 1024
       timeout: 120
+      
+      # 关键新增：告诉平台如何启动你的应用
+      customRuntimeConfig:
+        command:
+          - streamlit
+        args:
+          - run
+          - app.py
+          - --server.port=9000
+          - --server.address=0.0.0.0
+          - --server.headless=true
+        port: 9000
+
+      # ⚠️ 安全警告：由于你的仓库是公开的，这里千万不要写真实的 API Key！
+      # 建议先删掉这两个环境变量，或者填假值。真实的 Key 部署后在阿里云后台配置。
       environmentVariables:
-        ZHIPU_API_KEY: "9040a39f475a4c18ae0a7bd38af5303d.3lPk6qmAwd6ZqA6P"
         ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
+        
       triggers:
         - triggerName: "httpTrigger"
           triggerType: "http"
