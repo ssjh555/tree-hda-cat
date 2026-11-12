@@ -32,7 +32,7 @@ if not st.session_state["password_correct"]:
     st.info("该应用为参赛作品，请输入访问密码后体验。")
     password = st.text_input("请输入密码:", type="password")
     if st.button("进入"):
-        if password == "Psych2026": # 密码是 Psych2026，你可以自己改
+        if password == "shudong123456": # 密码是 Psych2026，你可以自己改
             st.session_state["password_correct"] = True
             st.rerun()
         else:
