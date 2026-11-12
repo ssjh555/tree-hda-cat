@@ -23,7 +23,22 @@ from openai import OpenAI
 
 # 设置页面配置：宽屏模式，侧边栏默认展开
 st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
+#  --- 密码保护开始 ---
+if "password_correct" not in st.session_state:
+    st.session_state["password_correct"] = False
 
+if not st.session_state["password_correct"]:
+    st.title("🔒 树有猫 - 心理预警智能体")
+    st.info("该应用为参赛作品，请输入访问密码后体验。")
+    password = st.text_input("请输入密码:", type="password")
+    if st.button("进入"):
+        if password == "Psych2026": # 密码是 Psych2026，你可以自己改
+            st.session_state["password_correct"] = True
+            st.rerun()
+        else:
+            st.error("密码错误，请重新输入")
+    st.stop() 
+# --- 密码保护结束 ---
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 # timeout=10：任何API调用最多等10秒，避免联网词库拉取卡死页面
 client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"], timeout=10)
