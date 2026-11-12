@@ -19,9 +19,3 @@ props:
   environmentVariables:
     ZHIPU_API_KEY: "9040a39f475a4c18ae0a7bd38af5303d.3lPk6qmAwd6ZqA6P"
     ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
-  triggers:
-    - triggerName: "httpTrigger"
-      triggerType: "http"
-      triggerConfig:
-        authType: "anonymous"
-        methods: ["GET", "POST"]
