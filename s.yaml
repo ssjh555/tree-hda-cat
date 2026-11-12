@@ -15,7 +15,7 @@ resources:
       memorySize: 1024
       timeout: 120
       environmentVariables:
-        ZHIPU_API_KEY: "填入你的智谱APIKey"
+        ZHIPU_API_KEY: "9040a39f475a4c18ae0a7bd38af5303d.3lPk6qmAwd6ZqA6P"
         ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
       triggers:
         - triggerName: "httpTrigger"
