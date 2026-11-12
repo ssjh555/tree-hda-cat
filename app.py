@@ -23,6 +23,8 @@ from openai import OpenAI
 
 # 设置页面配置：宽屏模式，侧边栏默认展开
 st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
+import streamlit as st
+
 # --- 账号密码验证逻辑开始 ---
 USERNAME = "shudong"       # 这就是你的账号
 PASSWORD = "shudong123456"   # 这就是你的密码，你可以随意改
@@ -45,9 +47,14 @@ if not st.session_state.logged_in:
             st.error("账号或密码错误，请重试")
     st.stop() # 没登录就不显示下面的内容
 # --- 账号密码验证逻辑结束 ---
+
+# 下面是你原本的代码
+# st.set_page_config(...)
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 # timeout=10：任何API调用最多等10秒，避免联网词库拉取卡死页面
-client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"], timeout=10)
+zhipu_key = st.secrets.get("ZHIPU_API_KEY") or os.getenv("ZHIPU_API_KEY")
+zhipu_url = st.secrets.get("ZHIPU_BASE_URL") or os.getenv("ZHIPU_BASE_URL")
+client = OpenAI(api_key=zhipu_key, base_url=zhipu_url, timeout=10)
 
 # ==================== 三级风控关键词体系 ====================
 # 高危拦截词：命中直接拦截，无需大模型确认（明确的自伤/自杀表述及网络黑话）
