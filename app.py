@@ -26,7 +26,7 @@ st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱",
 
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 # timeout=10：任何API调用最多等10秒，避免联网词库拉取卡死页面
-client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"], timeout=10)
+client = OpenAI(api_key=st.secrets.get("ZHIPU_API_KEY") or os.getenv("ZHIPU_API_KEY"), base_url=st.secrets.get("ZHIPU_BASE_URL") or os.getenv("ZHIPU_BASE_URL"), timeout=10)
 
 # ==================== 三级风控关键词体系 ====================
 # 高危拦截词：命中直接拦截，无需大模型确认（明确的自伤/自杀表述及网络黑话）
