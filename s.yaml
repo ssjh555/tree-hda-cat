@@ -1,4 +1,4 @@
-edition: 1.0.0
+edition: 2.0.0
 name: tree-hda-cat
 access: default
 vars:
