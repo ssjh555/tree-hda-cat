@@ -1,21 +1,25 @@
-props:
-  region: ${vars.region}
-  functionName: "tree-hda-cat"
-  runtime: "custom"          # 关键：改为自定义运行时
-  code: ./                   # 直接使用当前目录代码
-  memorySize: 1024
-  timeout: 120
-  # handler: ...             # 确保已删除或注释掉 handler 字段
-  customRuntimeConfig:
-    command:
-      - streamlit
-    args:
-      - run
-      - app.py
-      - --server.port=9000
-      - --server.address=0.0.0.0
-      - --server.headless=true
-    port: 9000               # 必须与启动命令中的端口一致
-  environmentVariables:
-    ZHIPU_API_KEY: "9040a39f475a4c18ae0a7bd38af5303d.3lPk6qmAwd6ZqA6P"
-    ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
+edition: 1.0.0
+name: tree-hda-cat
+access: default
+vars:
+  region: "cn-hangzhou"
+resources:
+  streamlit_app:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: "tree-hda-cat"
+      description: "Tree HDA Cat Streamlit Agent"
+      runtime: "python3.10"
+      code: ./
+      memorySize: 1024
+      timeout: 120
+      environmentVariables:
+        ZHIPU_API_KEY: "填入你的智谱APIKey"
+        ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
+      triggers:
+        - triggerName: "httpTrigger"
+          triggerType: "http"
+          triggerConfig:
+            authType: "anonymous"
+            methods: ["GET", "POST"]
