@@ -23,22 +23,28 @@ from openai import OpenAI
 
 # 设置页面配置：宽屏模式，侧边栏默认展开
 st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
-#  --- 密码保护开始 ---
-if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
+# --- 账号密码验证逻辑开始 ---
+USERNAME = "shudong"       # 这就是你的账号
+PASSWORD = "shudong123456"   # 这就是你的密码，你可以随意改
 
-if not st.session_state["password_correct"]:
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
     st.title("🔒 树有猫 - 心理预警智能体")
-    st.info("该应用为参赛作品，请输入访问密码后体验。")
-    password = st.text_input("请输入密码:", type="password")
-    if st.button("进入"):
-        if password == "shudong123456": # 密码是 Psych2026，你可以自己改
-            st.session_state["password_correct"] = True
+    st.info("请使用账号密码登录后体验。")
+    
+    input_user = st.text_input("账号")
+    input_pass = st.text_input("密码", type="password")
+    
+    if st.button("登录"):
+        if input_user == USERNAME and input_pass == PASSWORD:
+            st.session_state.logged_in = True
             st.rerun()
         else:
-            st.error("密码错误，请重新输入")
-    st.stop() 
-# --- 密码保护结束 ---
+            st.error("账号或密码错误，请重试")
+    st.stop() # 没登录就不显示下面的内容
+# --- 账号密码验证逻辑结束 ---
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 # timeout=10：任何API调用最多等10秒，避免联网词库拉取卡死页面
 client = OpenAI(api_key=st.secrets["ZHIPU_API_KEY"], base_url=st.secrets["ZHIPU_BASE_URL"], timeout=10)
