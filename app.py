@@ -23,33 +23,7 @@ from openai import OpenAI
 
 # 设置页面配置：宽屏模式，侧边栏默认展开
 st.set_page_config(page_title="我是你的树洞猫咪 🐱", page_icon="🐱", layout="wide", initial_sidebar_state="expanded")
-import streamlit as st
 
-# --- 账号密码验证逻辑开始 ---
-USERNAME = "shudong"       # 这就是你的账号
-PASSWORD = "shudong123456"   # 这就是你的密码，你可以随意改
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    st.title("🔒 树有猫 - 心理预警智能体")
-    st.info("请使用账号密码登录后体验。")
-    
-    input_user = st.text_input("账号")
-    input_pass = st.text_input("密码", type="password")
-    
-    if st.button("登录"):
-        if input_user == USERNAME and input_pass == PASSWORD:
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("账号或密码错误，请重试")
-    st.stop() # 没登录就不显示下面的内容
-# --- 账号密码验证逻辑结束 ---
-
-# 下面是你原本的代码
-# st.set_page_config(...)
 # 初始化大模型客户端（密钥从本地 .streamlit/secrets.toml 读取）
 # timeout=10：任何API调用最多等10秒，避免联网词库拉取卡死页面
 zhipu_key = st.secrets.get("ZHIPU_API_KEY") or os.getenv("ZHIPU_API_KEY")
